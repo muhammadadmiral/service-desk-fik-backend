@@ -1,82 +1,54 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { db } from '../../db';
-import { tickets, users, Ticket, NewTicket } from '../../db/schema';
-import { and, eq } from 'drizzle-orm';
+import { tickets } from '../../db/schema';
+import { eq, and } from 'drizzle-orm';
 
 @Injectable()
 export class TicketsService {
   private readonly logger = new Logger(TicketsService.name);
 
+  // Perbaiki findAll untuk menerima parameter
   async findAll(status?: string, category?: string): Promise<any[]> {
     try {
-      let query = db
-        .select({
-          ticket: tickets,
-          userName: users.name,
-          userEmail: users.email,
-        })
-        .from(tickets)
-        .leftJoin(users, eq(tickets.userId, users.id));
+      let query = db.select().from(tickets);
 
-      if (status || category) {
-        const filters = [];
-        if (status) {
-          filters.push(eq(tickets.status, status));
-        }
-        if (category) {
-          filters.push(eq(tickets.category, category));
-        }
-
-        query = query.where(and(...filters));
+      // Tambahkan filter jika ada
+      if (status && category) {
+        query = query.where(
+          and(eq(tickets.status, status), eq(tickets.category, category)),
+        );
+      } else if (status) {
+        query = query.where(eq(tickets.status, status));
+      } else if (category) {
+        query = query.where(eq(tickets.category, category));
       }
 
-      const result = await query;
-
-      return result.map((item) => ({
-        ...item.ticket,
-        userName: item.userName,
-        userEmail: item.userEmail,
-      }));
+      return query;
     } catch (error) {
       this.logger.error(`Error finding tickets: ${error.message}`);
       throw error;
     }
   }
 
-  async findByUserId(userId: number): Promise<Ticket[]> {
-    return db.select().from(tickets).where(eq(tickets.userId, userId));
-  }
-
-  async findOne(id: number): Promise<any> {
+  // Tambahkan method findByUserId
+  async findByUserId(userId: number): Promise<any[]> {
     try {
-      const result = await db
-        .select({
-          ticket: tickets,
-          userName: users.name,
-          userEmail: users.email,
-        })
-        .from(tickets)
-        .leftJoin(users, eq(tickets.userId, users.id))
-        .where(eq(tickets.id, id))
-        .limit(1);
-
-      if (result.length === 0) {
-        throw new NotFoundException(`Ticket with ID ${id} not found`);
-      }
-
-      return {
-        ...result[0].ticket,
-        userName: result[0].userName,
-        userEmail: result[0].userEmail,
-      };
+      return db.select().from(tickets).where(eq(tickets.userId, userId));
     } catch (error) {
-      this.logger.error(`Error finding ticket ${id}: ${error.message}`);
+      this.logger.error(`Error finding tickets by user ID: ${error.message}`);
       throw error;
     }
   }
 
-  async create(data: any): Promise<Ticket> {
+  async findOne(id: number): Promise<any> {
+    const result = await db.select().from(tickets).where(eq(tickets.id, id));
+    return result[0] || null;
+  }
+
+  async create(data: any): Promise<any> {
     try {
+      // Pastikan field yang dimasukkan sesuai dengan schema tickets
+      // Ambil dari schema/tickets.ts
       const result = await db
         .insert(tickets)
         .values({
@@ -85,11 +57,9 @@ export class TicketsService {
           category: data.category,
           type: data.type,
           department: data.department,
-          priority: data.priority || 'medium',
           userId: data.userId,
           ticketNumber: data.ticketNumber,
-          status: 'pending',
-          progress: 0,
+          // Jangan tambahkan field lain yang tidak ada di schema
         })
         .returning();
 
@@ -100,44 +70,22 @@ export class TicketsService {
     }
   }
 
-  async update(id: number, data: any): Promise<Ticket | null> {
-    try {
-      const ticket = await this.findOne(id);
-      if (!ticket) {
-        throw new NotFoundException(`Ticket with ID ${id} not found`);
-      }
+  async update(id: number, data: any): Promise<any> {
+    const result = await db
+      .update(tickets)
+      .set(data)
+      .where(eq(tickets.id, id))
+      .returning();
 
-      const updateData = { ...data };
-
-      const result = await db
-        .update(tickets)
-        .set(updateData)
-        .where(eq(tickets.id, id))
-        .returning();
-
-      return result[0];
-    } catch (error) {
-      this.logger.error(`Error updating ticket ${id}: ${error.message}`);
-      throw error;
-    }
+    return result[0];
   }
 
   async remove(id: number): Promise<boolean> {
-    try {
-      const ticket = await this.findOne(id);
-      if (!ticket) {
-        throw new NotFoundException(`Ticket with ID ${id} not found`);
-      }
+    const result = await db
+      .delete(tickets)
+      .where(eq(tickets.id, id))
+      .returning({ id: tickets.id });
 
-      const result = await db
-        .delete(tickets)
-        .where(eq(tickets.id, id))
-        .returning({ id: tickets.id });
-
-      return result.length > 0;
-    } catch (error) {
-      this.logger.error(`Error removing ticket ${id}: ${error.message}`);
-      throw error;
-    }
+    return result.length > 0;
   }
 }
