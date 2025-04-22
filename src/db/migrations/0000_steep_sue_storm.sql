@@ -55,3 +55,15 @@ ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_ticket_id_tickets_
 ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tickets" ADD CONSTRAINT "tickets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tickets" ADD CONSTRAINT "tickets_assigned_to_users_id_fk" FOREIGN KEY ("assigned_to") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "uid" VARCHAR(255) UNIQUE;
+ALTER TABLE "users" ADD COLUMN uid VARCHAR(255) UNIQUE;
+ALTER TABLE "nama_tabel_pengguna" ADD COLUMN uid VARCHAR(255);
+CREATE INDEX "idx_tickets_status" ON tickets(status);
+ALTER TABLE tickets ADD CONSTRAINT check_progress CHECK (progress >= 0 AND progress <= 100);
+CREATE TYPE user_role AS ENUM ('mahasiswa', 'admin');
+ALTER TABLE users ALTER COLUMN role SET DATA TYPE user_role;
+
+
+
+
+

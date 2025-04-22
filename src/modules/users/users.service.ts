@@ -21,29 +21,40 @@ export class UsersService {
   }
 
   async findByUid(uid: string) {
-    const result = await db
-      .select()
-      .from(users)
-      .where(eq(users.uid, uid))
-      .limit(1);
-    return result.length > 0 ? result[0] : null;
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.uid, uid)) // Menggunakan uid untuk pencarian
+        .limit(1);
+      return result.length > 0 ? result[0] : null;
+    } catch (error) {
+      this.logger.error(`Error finding user by UID: ${error.message}`);
+      throw error;
+    }
   }
 
   async findByEmail(email: string) {
-    const result = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-    return result.length > 0 ? result[0] : null;
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+      return result.length > 0 ? result[0] : null;
+    } catch (error) {
+      this.logger.error(`Error finding user by email: ${error.message}`);
+      throw error;
+    }
   }
 
   async create(data: any) {
     try {
       const userData = {
-        uid: data.uid,
+        uid: data.uid, // Memastikan uid digunakan saat pembuatan
         name: data.name,
         email: data.email,
+        password: data.password, // Pastikan password sudah terenkripsi sebelum disimpan
         role: data.role || 'mahasiswa',
         department: data.department || '',
         profilePicture: data.profilePicture || '',
