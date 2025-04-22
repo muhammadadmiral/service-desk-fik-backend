@@ -42,6 +42,19 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# Firebase keys and credentials
+*firebase-admin*.json
+
+# Node
+node_modules/
+npm-debug.log
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
 # temp directory
 .temp
 .tmp

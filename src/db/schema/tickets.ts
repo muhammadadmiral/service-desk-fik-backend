@@ -1,4 +1,11 @@
-import { pgTable, serial, varchar, timestamp, text, integer, foreignKey } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  serial,
+  varchar,
+  timestamp,
+  text,
+  integer,
+} from 'drizzle-orm/pg-core';
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import { users } from './users';
 
@@ -13,7 +20,9 @@ export const tickets = pgTable('tickets', {
   type: varchar('type', { length: 100 }).notNull(),
   department: varchar('department', { length: 100 }).notNull(),
   progress: integer('progress').default(0),
-  userId: integer('user_id').references(() => users.id).notNull(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   assignedTo: integer('assigned_to').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
@@ -23,16 +32,24 @@ export const tickets = pgTable('tickets', {
 
 export const ticketMessages = pgTable('ticket_messages', {
   id: serial('id').primaryKey(),
-  ticketId: integer('ticket_id').references(() => tickets.id).notNull(),
-  userId: integer('user_id').references(() => users.id).notNull(),
+  ticketId: integer('ticket_id')
+    .references(() => tickets.id)
+    .notNull(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   message: text('message').notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
 export const ticketAttachments = pgTable('ticket_attachments', {
   id: serial('id').primaryKey(),
-  ticketId: integer('ticket_id').references(() => tickets.id).notNull(),
-  userId: integer('user_id').references(() => users.id).notNull(),
+  ticketId: integer('ticket_id')
+    .references(() => tickets.id)
+    .notNull(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   fileName: varchar('file_name', { length: 255 }).notNull(),
   fileSize: integer('file_size').notNull(),
   fileType: varchar('file_type', { length: 100 }).notNull(),
