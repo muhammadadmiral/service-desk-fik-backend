@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
 import { UsersService } from '../users/users.service';
 import { ConfigService } from '@nestjs/config';
@@ -9,6 +9,7 @@ export class AuthService {
 
   constructor(
     private firebaseService: FirebaseService,
+    @Inject(forwardRef(() => UsersService))
     private usersService: UsersService,
   ) {}
 
