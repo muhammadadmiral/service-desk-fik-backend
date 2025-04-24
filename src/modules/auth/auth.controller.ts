@@ -1,4 +1,3 @@
-// src/modules/auth/auth.controller.ts
 import {
   Controller,
   Post,
@@ -42,7 +41,6 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() registerDto: any) {
-    // Validasi input
     if (!registerDto.email || !registerDto.password || !registerDto.name) {
       throw new HttpException(
         'Email, password, and name are required',

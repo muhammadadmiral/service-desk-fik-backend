@@ -9,7 +9,6 @@ export const users = pgTable('users', {
   password: varchar('password', { length: 255 }).notNull(), // untuk menyimpan password yang di-hash
   role: varchar('role', { length: 50 }).notNull().default('mahasiswa'),
   department: varchar('department', { length: 100 }),
-  profilePicture: text('profile_picture'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
