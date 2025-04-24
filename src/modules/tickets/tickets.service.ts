@@ -1,3 +1,4 @@
+// src/modules/tickets/tickets.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { db } from '../../db';
 import {
@@ -14,36 +15,72 @@ export class TicketsService {
 
   async findAll(status?: string, category?: string) {
     try {
-      let query = db.select().from(tickets);
-
-      if (status) {
-        query = query.where(eq(tickets.status, status));
+      // Build query conditionally
+      if (status && category) {
+        return await db
+          .select()
+          .from(tickets)
+          .where(
+            and(eq(tickets.status, status), eq(tickets.category, category)),
+          )
+          .orderBy(desc(tickets.createdAt));
+      } else if (status) {
+        return await db
+          .select()
+          .from(tickets)
+          .where(eq(tickets.status, status))
+          .orderBy(desc(tickets.createdAt));
+      } else if (category) {
+        return await db
+          .select()
+          .from(tickets)
+          .where(eq(tickets.category, category))
+          .orderBy(desc(tickets.createdAt));
+      } else {
+        return await db.select().from(tickets).orderBy(desc(tickets.createdAt));
       }
-
-      if (category) {
-        query = query.where(eq(tickets.category, category));
-      }
-
-      return await query.orderBy(desc(tickets.createdAt));
     } catch (error) {
-      this.logger.error(`Error finding all tickets: ${error.message}`);
+      this.logger.error(`Error finding tickets: ${error.message}`);
       throw error;
     }
   }
 
   async findByUserId(userId: number, status?: string, category?: string) {
     try {
-      let query = db.select().from(tickets).where(eq(tickets.userId, userId));
-
-      if (status) {
-        query = query.where(eq(tickets.status, status));
+      // Build query conditionally
+      if (status && category) {
+        return await db
+          .select()
+          .from(tickets)
+          .where(
+            and(
+              eq(tickets.userId, userId),
+              eq(tickets.status, status),
+              eq(tickets.category, category),
+            ),
+          )
+          .orderBy(desc(tickets.createdAt));
+      } else if (status) {
+        return await db
+          .select()
+          .from(tickets)
+          .where(and(eq(tickets.userId, userId), eq(tickets.status, status)))
+          .orderBy(desc(tickets.createdAt));
+      } else if (category) {
+        return await db
+          .select()
+          .from(tickets)
+          .where(
+            and(eq(tickets.userId, userId), eq(tickets.category, category)),
+          )
+          .orderBy(desc(tickets.createdAt));
+      } else {
+        return await db
+          .select()
+          .from(tickets)
+          .where(eq(tickets.userId, userId))
+          .orderBy(desc(tickets.createdAt));
       }
-
-      if (category) {
-        query = query.where(eq(tickets.category, category));
-      }
-
-      return await query.orderBy(desc(tickets.createdAt));
     } catch (error) {
       this.logger.error(`Error finding tickets by user ID: ${error.message}`);
       throw error;

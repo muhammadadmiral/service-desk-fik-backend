@@ -1,3 +1,4 @@
+// src/modules/tickets/tickets.controller.ts
 import {
   Controller,
   Get,
@@ -14,14 +15,14 @@ import {
   UseInterceptors,
   UploadedFiles,
 } from '@nestjs/common';
-import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TicketsService } from './tickets.service';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 
-// Define the File type to fix the Express.Multer.File error
+// Define the File type
 interface MulterFile {
   fieldname: string;
   originalname: string;
@@ -41,24 +42,17 @@ export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
 
   @Get()
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async getAllTickets(@Req() req, @Param() params: any) {
     try {
       const { status, category } = params;
       // Admin or staff can see all tickets
-      if (
-        req.user.dbUser?.role === 'admin' ||
-        req.user.dbUser?.role === 'staff'
-      ) {
+      if (req.user?.role === 'admin' || req.user?.role === 'staff') {
         return this.ticketsService.findAll(status, category);
       }
 
       // Regular users can only see their own tickets
-      return this.ticketsService.findByUserId(
-        req.user.dbUser.id,
-        status,
-        category,
-      );
+      return this.ticketsService.findByUserId(req.user.id, status, category);
     } catch (error) {
       this.logger.error(`Error getting all tickets: ${error.message}`);
       throw new HttpException(
@@ -69,17 +63,14 @@ export class TicketsController {
   }
 
   @Get('my')
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async getMyTickets(@Req() req) {
     try {
-      if (!req.user.dbUser) {
-        throw new HttpException(
-          'User not found in database',
-          HttpStatus.NOT_FOUND,
-        );
+      if (!req.user) {
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
       }
 
-      return this.ticketsService.findByUserId(req.user.dbUser.id);
+      return this.ticketsService.findByUserId(req.user.id);
     } catch (error) {
       this.logger.error(`Error getting user tickets: ${error.message}`);
       throw new HttpException(
@@ -90,7 +81,7 @@ export class TicketsController {
   }
 
   @Get(':id')
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async getTicketById(@Param('id') id: string, @Req() req) {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
@@ -102,9 +93,9 @@ export class TicketsController {
 
       // Check if user has access to this ticket
       if (
-        req.user.dbUser.role !== 'admin' &&
-        req.user.dbUser.role !== 'staff' &&
-        ticket.userId !== req.user.dbUser.id
+        req.user.role !== 'admin' &&
+        req.user.role !== 'staff' &&
+        ticket.userId !== req.user.id
       ) {
         throw new HttpException(
           'You do not have permission to view this ticket',
@@ -123,7 +114,7 @@ export class TicketsController {
   }
 
   @Post()
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FilesInterceptor('attachments', 5, {
       storage: diskStorage({
@@ -150,11 +141,8 @@ export class TicketsController {
     @UploadedFiles() files: MulterFile[] = [],
   ) {
     try {
-      if (!req.user.dbUser) {
-        throw new HttpException(
-          'User not found in database',
-          HttpStatus.NOT_FOUND,
-        );
+      if (!req.user) {
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
       }
 
       // Generate a ticket number
@@ -164,7 +152,7 @@ export class TicketsController {
       const ticketData = {
         ...createTicketDto,
         ticketNumber,
-        userId: req.user.dbUser.id,
+        userId: req.user.id,
         status: 'pending',
         progress: 0,
       };
@@ -176,7 +164,7 @@ export class TicketsController {
       if (files && files.length > 0) {
         const attachments = files.map((file) => ({
           ticketId: ticket.id,
-          userId: req.user.dbUser.id,
+          userId: req.user.id,
           fileName: file.originalname,
           fileSize: file.size,
           fileType: file.mimetype,
@@ -197,7 +185,7 @@ export class TicketsController {
   }
 
   @Put(':id')
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async updateTicket(
     @Param('id') id: string,
     @Body() updateTicketDto: any,
@@ -213,9 +201,9 @@ export class TicketsController {
 
       // Check if user has permission to update this ticket
       if (
-        req.user.dbUser.role !== 'admin' &&
-        req.user.dbUser.role !== 'staff' &&
-        ticket.userId !== req.user.dbUser.id
+        req.user.role !== 'admin' &&
+        req.user.role !== 'staff' &&
+        ticket.userId !== req.user.id
       ) {
         throw new HttpException(
           'You do not have permission to update this ticket',
@@ -235,7 +223,7 @@ export class TicketsController {
   }
 
   @Delete(':id')
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async deleteTicket(@Param('id') id: string, @Req() req) {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
@@ -246,7 +234,7 @@ export class TicketsController {
       }
 
       // Only admins can delete tickets
-      if (req.user.dbUser.role !== 'admin') {
+      if (req.user.role !== 'admin') {
         throw new HttpException(
           'You do not have permission to delete this ticket',
           HttpStatus.FORBIDDEN,
@@ -265,7 +253,7 @@ export class TicketsController {
   }
 
   @Get(':id/messages')
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async getTicketMessages(@Param('id') id: string, @Req() req) {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
@@ -277,9 +265,9 @@ export class TicketsController {
 
       // Check if user has access to this ticket
       if (
-        req.user.dbUser.role !== 'admin' &&
-        req.user.dbUser.role !== 'staff' &&
-        ticket.userId !== req.user.dbUser.id
+        req.user.role !== 'admin' &&
+        req.user.role !== 'staff' &&
+        ticket.userId !== req.user.id
       ) {
         throw new HttpException(
           'You do not have permission to view messages for this ticket',
@@ -299,7 +287,7 @@ export class TicketsController {
   }
 
   @Post(':id/messages')
-  @UseGuards(FirebaseAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FilesInterceptor('attachments', 5, {
       storage: diskStorage({
@@ -336,9 +324,9 @@ export class TicketsController {
 
       // Check if user has access to this ticket
       if (
-        req.user.dbUser.role !== 'admin' &&
-        req.user.dbUser.role !== 'staff' &&
-        ticket.userId !== req.user.dbUser.id
+        req.user.role !== 'admin' &&
+        req.user.role !== 'staff' &&
+        ticket.userId !== req.user.id
       ) {
         throw new HttpException(
           'You do not have permission to add messages to this ticket',
@@ -349,7 +337,7 @@ export class TicketsController {
       // Add message to ticket
       const message = await this.ticketsService.addMessage({
         ticketId: Number.parseInt(id),
-        userId: req.user.dbUser.id,
+        userId: req.user.id,
         message: messageDto.message,
       });
 
@@ -357,7 +345,7 @@ export class TicketsController {
       if (files && files.length > 0) {
         const attachments = files.map((file) => ({
           ticketId: Number.parseInt(id),
-          userId: req.user.dbUser.id,
+          userId: req.user.id,
           fileName: file.originalname,
           fileSize: file.size,
           fileType: file.mimetype,
@@ -371,9 +359,9 @@ export class TicketsController {
       return {
         ...message,
         sender: {
-          id: req.user.dbUser.id,
-          name: req.user.dbUser.name,
-          role: req.user.dbUser.role,
+          id: req.user.id,
+          name: req.user.name,
+          role: req.user.role,
         },
       };
     } catch (error) {

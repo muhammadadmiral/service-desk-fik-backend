@@ -1,10 +1,11 @@
+// src/db/seed.ts
 import { db } from './index';
 import { users, tickets, ticketMessages } from './schema';
+import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// Seed function to populate the database with test data
 async function seed() {
   console.log('Seeding database...');
 
@@ -15,28 +16,34 @@ async function seed() {
     if (existingUsers.length === 0) {
       console.log('Adding test users...');
 
+      // Hash passwords
+      const adminPassword = await bcrypt.hash('admin123', 10);
+      const dosenPassword = await bcrypt.hash('dosen123', 10);
+      const mahasiswaPassword = await bcrypt.hash('mahasiswa123', 10);
+
       // Add test users
       await db.insert(users).values([
         {
-          uid: 'admin-uid-123',
           name: 'Admin User',
           email: 'admin@example.com',
+          password: adminPassword,
           role: 'admin',
           department: 'IT',
         },
         {
-          uid: 'staff-uid-123',
-          name: 'Staff User',
-          email: 'staff@example.com',
-          role: 'staff',
-          department: 'Support',
+          name: 'Dosen User',
+          email: 'dosen@example.com',
+          password: dosenPassword,
+          role: 'dosen',
+          department: 'Informatika',
         },
         {
-          uid: 'student-uid-123',
-          name: 'Student User',
-          email: 'student@example.com',
+          nim: '2110511162',
+          name: 'Mahasiswa User',
+          email: 'mahasiswa@example.com',
+          password: mahasiswaPassword,
           role: 'mahasiswa',
-          department: 'Computer Science',
+          department: 'Informatika',
         },
       ]);
 

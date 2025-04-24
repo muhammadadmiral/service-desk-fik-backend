@@ -1,9 +1,10 @@
+// drizzle.config.ts
 import type { Config } from 'drizzle-kit';
 
 export default {
   schema: "./src/db/schema/*.ts",
   out: "./src/db/migrations",
-  driver: "pg",
+  dialect: "postgresql", // Gunakan "postgresql" alih-alih "pg"
   dbCredentials: {
     host: process.env.DATABASE_HOST || "localhost",
     port: parseInt(process.env.DATABASE_PORT || "5432"),

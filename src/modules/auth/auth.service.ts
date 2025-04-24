@@ -1,92 +1,101 @@
-import {
-  forwardRef,
-  Inject,
-  Injectable,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+// src/modules/auth/auth.service.ts
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    private firebaseService: FirebaseService,
-    @Inject(forwardRef(() => UsersService))
-    private readonly usersService: UsersService,
+    private usersService: UsersService,
+    private jwtService: JwtService,
   ) {}
 
-  async validateToken(token: string) {
+  async validateUser(email: string, password: string): Promise<any> {
     try {
-      // Verify the Firebase token
-      const decodedToken = await this.firebaseService.verifyToken(token);
-
-      try {
-        // Try to find the user in our database
-        let user = await this.usersService.findByUid(decodedToken.uid);
-
-        // If user doesn't exist in our database, create one
-        if (!user) {
-          this.logger.log(
-            `User with UID ${decodedToken.uid} not found in database, creating...`,
-          );
-
-          try {
-            // Try to create a new user
-            user = await this.usersService.create({
-              uid: decodedToken.uid,
-              name:
-                decodedToken.name ||
-                decodedToken.email?.split('@')[0] ||
-                'User',
-              email: decodedToken.email || '',
-              department: '',
-              role: this.determineUserRole(decodedToken.email || ''),
-            });
-
-            this.logger.log(`User created with ID: ${user.id}`);
-          } catch (createError) {
-            this.logger.error(`Failed to create user: ${createError.message}`);
-
-            // If we can't create a user, still return the decoded token
-            // This allows the request to proceed with limited functionality
-            return {
-              ...decodedToken,
-              dbUser: null,
-              error: 'User could not be created in database',
-            };
-          }
-        }
-
-        // Attach db user to decoded token
-        return { ...decodedToken, dbUser: user };
-      } catch (dbError) {
-        this.logger.error(`Database error: ${dbError.message}`);
-
-        // If there's a database error, still return the decoded token
-        // This allows the request to proceed with limited functionality
-        return {
-          ...decodedToken,
-          dbUser: null,
-          error: 'Database error occurred',
-        };
+      const user = await this.usersService.findByEmail(email);
+      if (user && (await bcrypt.compare(password, user.password))) {
+        const { password, ...result } = user;
+        return result;
       }
-    } catch (tokenError) {
-      this.logger.error(`Token validation failed: ${tokenError.message}`);
-      throw new UnauthorizedException('Invalid token');
+      return null;
+    } catch (error) {
+      this.logger.error(`Error validating user: ${error.message}`);
+      return null;
     }
   }
 
-  // Helper method to determine user role based on email
-  private determineUserRole(email: string): string {
-    if (email.includes('admin')) {
-      return 'admin';
-    } else if (email.includes('dosen')) {
-      return 'dosen';
-    } else {
-      return 'mahasiswa';
+  async login(email: string, password: string) {
+    const user = await this.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
     }
+
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    return {
+      access_token: this.jwtService.sign(payload),
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        nim: user.nim,
+        role: user.role,
+        department: user.department,
+      },
+    };
+  }
+
+  async loginWithNim(nim: string, password: string) {
+    try {
+      // Cari user berdasarkan NIM
+      const user = await this.usersService.findByNim(nim);
+
+      if (!user) {
+        throw new UnauthorizedException('Invalid NIM');
+      }
+
+      // Verifikasi password
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Invalid password');
+      }
+
+      // Buat token JWT
+      const payload = { sub: user.id, email: user.email, role: user.role };
+
+      return {
+        access_token: this.jwtService.sign(payload),
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          nim: user.nim,
+          role: user.role,
+          department: user.department,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Login with NIM failed: ${error.message}`);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+  }
+
+  async register(userData: any) {
+    // Hash password sebelum menyimpan ke database
+    const hashedPassword = await bcrypt.hash(userData.password, 10);
+
+    // Buat user baru
+    const newUser = await this.usersService.create({
+      ...userData,
+      password: hashedPassword,
+    });
+
+    // Hapus password dari respons
+    const { password, ...result } = newUser;
+
+    return result;
   }
 }

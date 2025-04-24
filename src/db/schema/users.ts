@@ -3,9 +3,10 @@ import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
-  uid: varchar('uid', { length: 255 }).notNull().unique(), // Firebase UID
+  nim: varchar('nim', { length: 20 }).unique(),
   name: varchar('name', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
+  password: varchar('password', { length: 255 }).notNull(), // untuk menyimpan password yang di-hash
   role: varchar('role', { length: 50 }).notNull().default('mahasiswa'),
   department: varchar('department', { length: 100 }),
   profilePicture: text('profile_picture'),

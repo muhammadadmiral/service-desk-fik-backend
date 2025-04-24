@@ -1,3 +1,4 @@
+// src/users/users.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { db } from '../../db';
 import { users } from '../../db/schema';
@@ -20,16 +21,16 @@ export class UsersService {
     return result.length > 0 ? result[0] : null;
   }
 
-  async findByUid(uid: string) {
+  async findByNim(nim: string) {
     try {
       const result = await db
         .select()
         .from(users)
-        .where(eq(users.uid, uid)) // Menggunakan uid untuk pencarian
+        .where(eq(users.nim, nim))
         .limit(1);
       return result.length > 0 ? result[0] : null;
     } catch (error) {
-      this.logger.error(`Error finding user by UID: ${error.message}`);
+      this.logger.error(`Error finding user by NIM: ${error.message}`);
       throw error;
     }
   }
@@ -51,10 +52,10 @@ export class UsersService {
   async create(data: any) {
     try {
       const userData = {
-        uid: data.uid, // Memastikan uid digunakan saat pembuatan
+        nim: data.nim,
         name: data.name,
         email: data.email,
-        password: data.password, // Pastikan password sudah terenkripsi sebelum disimpan
+        password: data.password,
         role: data.role || 'mahasiswa',
         department: data.department || '',
         profilePicture: data.profilePicture || '',
