@@ -1,5 +1,5 @@
 {
-  "id": "0ededd26-a53c-46d2-88c8-b9b8a54ade87",
+  "id": "1afbaee9-e43a-4dad-bbb6-6ae59a2bf017",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -12,12 +12,6 @@
           "name": "id",
           "type": "serial",
           "primaryKey": true,
-          "notNull": true
-        },
-        "uid": {
-          "name": "uid",
-          "type": "varchar(255)",
-          "primaryKey": false,
           "notNull": true
         },
         "nim": {
@@ -38,6 +32,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "password": {
+          "name": "password",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
         "role": {
           "name": "role",
           "type": "varchar(50)",
@@ -48,12 +48,6 @@
         "department": {
           "name": "department",
           "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "profile_picture": {
-          "name": "profile_picture",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -76,13 +70,6 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "users_uid_unique": {
-          "name": "users_uid_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "uid"
-          ]
-        },
         "users_nim_unique": {
           "name": "users_nim_unique",
           "nullsNotDistinct": false,

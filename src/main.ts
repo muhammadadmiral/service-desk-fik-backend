@@ -13,19 +13,12 @@ async function bootstrap() {
     }),
   );
 
-  // Enable CORS for frontend
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:4000',
-      'http://127.0.0.1:5173',
-    ],
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
+    origin: true,         // <-- reflect origin header
+    credentials: true,    // <-- allow cookies/auth
   });
 
-  await app.listen(3001);
-  console.log(`Applicacoes nya jalan ya mek di : http://localhost:3001`);
+  await app.listen(3001, '0.0.0.0');
+  console.log('Backend running on all interfaces at port 3001');
 }
 bootstrap();
