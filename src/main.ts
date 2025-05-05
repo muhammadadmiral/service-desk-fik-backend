@@ -18,7 +18,7 @@ async function bootstrap() {
     credentials: true,    // <-- allow cookies/auth
   });
 
-  await app.listen(3001);
-  console.log('Backend running on http://localhost:3001');
+  await app.listen(3001, '0.0.0.0');
+  console.log('Backend running on all interfaces at port 3001');
 }
 bootstrap();
