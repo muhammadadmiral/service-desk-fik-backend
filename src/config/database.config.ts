@@ -1,10 +1,13 @@
-import { registerAs } from '@nestjs/config';
+// src/config/database.config.ts
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from '../db/schema/';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
-export default registerAs('database', () => ({
-  host: process.env.DATABASE_HOST || 'localhost',
-  port: parseInt(process.env.DATABASE_PORT || '5432', 10),
-  username: process.env.DATABASE_USER || 'postgres',
-  password: process.env.DATABASE_PASSWORD || 'admin123',
-  database: process.env.DATABASE_NAME || 'service_desk_db',
-  url: process.env.DATABASE_URL,
-}));
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,     // ← pastikan ini ada
+  ssl: { rejectUnauthorized: false },              // Neon butuh SSL
+});
+
+export const db = drizzle(pool, { schema });

@@ -1,15 +1,21 @@
 // drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
 import type { Config } from 'drizzle-kit';
+import dotenv from 'dotenv';
 
-export default {
-  schema: "./src/db/schema/*.ts",
-  out: "./src/db/migrations",
-  dialect: "postgresql", // Gunakan "postgresql" alih-alih "pg"
+// Load .env sebelum pakai process.env
+dotenv.config();
+
+const url = process.env.DATABASE_URL;
+if (!url) {
+  throw new Error('⚠️  Missing env var DATABASE_URL');
+}
+
+export default defineConfig({
+  schema: './src/db/schema/*.ts',
+  out: './src/db/migrations',
+  dialect: 'postgresql',      // atau driver: 'pg'
   dbCredentials: {
-    host: process.env.DATABASE_HOST || "localhost",
-    port: parseInt(process.env.DATABASE_PORT || "5432"),
-    user: process.env.DATABASE_USER || "postgres",
-    password: process.env.DATABASE_PASSWORD || "admin123",
-    database: process.env.DATABASE_NAME || "service_desk_db",
+    url,                       // langsung pakai connection string
   },
-} satisfies Config;
+}) satisfies Config;

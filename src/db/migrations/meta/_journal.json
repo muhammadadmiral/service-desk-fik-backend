@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1745505203236,
-      "tag": "0000_remarkable_payback",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1745506846130,
-      "tag": "0001_brown_mockingbird",
+      "when": 1746450304231,
+      "tag": "0000_daily_exodus",
       "breakpoints": true
     }
   ]
