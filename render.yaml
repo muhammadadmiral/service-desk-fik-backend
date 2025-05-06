@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: service-desk-fik-backend
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: node dist/main.js
+    env: node
+    plan: free
+    branch: main
+    autoDeploy: true

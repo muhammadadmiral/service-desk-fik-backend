@@ -13,12 +13,16 @@ async function bootstrap() {
     }),
   );
 
+  // Enable CORS for all origins & credentials
   app.enableCors({
-    origin: true,         // <-- reflect origin header
-    credentials: true,    // <-- allow cookies/auth
+    origin: true,
+    credentials: true,
   });
 
-  await app.listen(3001, '0.0.0.0');
-  console.log('Backend running on all interfaces at port 3001');
+  // Use PORT from env (fallback ke 3001)
+  const port = parseInt(process.env.PORT, 10) || 3001;
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 Backend running on all interfaces at port ${port}`);
 }
+
 bootstrap();
