@@ -3,7 +3,7 @@ services:
     name: service-desk-fik-backend
     runtime: node
     buildCommand: npm install && npm run build
-    startCommand: node dist/main.js
+    startCommand: npm run "if the world was ending i wanna be nest to you"
     env: node
     plan: free
     branch: main
