@@ -2,8 +2,7 @@
 
 ## Base URL
 ```
-http://localhost:3001
-```
+https://service-desk-fik-backend-production.up.railway.app/```
 
 ## Authentication
 All endpoints except login/register require JWT authentication via Bearer token:
