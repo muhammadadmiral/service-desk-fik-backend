@@ -1,16 +1,18 @@
+# nixpacks.toml
+[providers]
+node = true
+
 [phases.setup]
-nixPkgs = ["nodejs-18_x", "npm", "postgresql"]
+nixPkgs = ["nodejs-18_x", "postgresql"]
 
 [phases.install]
 cmds = ["npm ci"]
 
 [phases.build]
-cmds = [
-  "npm run build",
-  "npm run db:generate",
-  "npm run db:migrate",
-  "npm run seed"
-]
+cmds = ["npm run build"]
 
 [start]
 cmd = "npm run start:prod"
+
+[variables]
+NODE_ENV = "production"
