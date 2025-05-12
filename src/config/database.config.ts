@@ -6,8 +6,8 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,     // ← pastikan ini ada
-  ssl: { rejectUnauthorized: false },              // Neon butuh SSL
+  connectionString: process.env.DATABASE_URL, // ← pastikan ini ada
+  ssl: { rejectUnauthorized: false }, // Neon butuh SSL
 });
 
 export const db = drizzle(pool, { schema });

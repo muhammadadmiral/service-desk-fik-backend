@@ -1,3 +1,5 @@
+// src/db/schema/tickets.ts
+
 import {
   pgTable,
   serial,
@@ -54,6 +56,7 @@ export const ticketAttachments = pgTable('ticket_attachments', {
   fileSize: integer('file_size').notNull(),
   fileType: varchar('file_type', { length: 100 }).notNull(),
   filePath: varchar('file_path', { length: 255 }).notNull(),
+  cloudinaryId: varchar('cloudinary_id', { length: 255 }), // ADD THIS LINE
   createdAt: timestamp('created_at').defaultNow(),
 });
 

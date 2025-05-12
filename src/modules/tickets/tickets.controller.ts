@@ -1,4 +1,3 @@
-// src/modules/tickets/tickets.controller.ts
 import {
   Controller,
   Get,
@@ -14,44 +13,30 @@ import {
   HttpStatus,
   UseInterceptors,
   UploadedFiles,
+  Query,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TicketsService } from './tickets.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import * as path from 'path';
-import * as fs from 'fs';
-
-// Define the File type
-interface MulterFile {
-  fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
-  size: number;
-  destination: string;
-  filename: string;
-  path: string;
-  buffer: Buffer;
-}
 
 @Controller('tickets')
 export class TicketsController {
   private readonly logger = new Logger(TicketsController.name);
 
-  constructor(private readonly ticketsService: TicketsService) {}
+  constructor(
+    private readonly ticketsService: TicketsService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  async getAllTickets(@Req() req, @Param() params: any) {
+  async getAllTickets(@Req() req, @Query() query: any) {
     try {
-      const { status, category } = params;
-      // Admin or staff can see all tickets
+      const { status, category } = query;
       if (req.user?.role === 'admin' || req.user?.role === 'staff') {
         return this.ticketsService.findAll(status, category);
       }
-
-      // Regular users can only see their own tickets
       return this.ticketsService.findByUserId(req.user.id, status, category);
     } catch (error) {
       this.logger.error(`Error getting all tickets: ${error.message}`);
@@ -69,7 +54,6 @@ export class TicketsController {
       if (!req.user) {
         throw new HttpException('User not found', HttpStatus.NOT_FOUND);
       }
-
       return this.ticketsService.findByUserId(req.user.id);
     } catch (error) {
       this.logger.error(`Error getting user tickets: ${error.message}`);
@@ -86,12 +70,10 @@ export class TicketsController {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
 
-      // Check if ticket exists
       if (!ticket) {
         throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
       }
 
-      // Check if user has access to this ticket
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
@@ -117,38 +99,23 @@ export class TicketsController {
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FilesInterceptor('attachments', 5, {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const uploadPath = path.join(process.cwd(), 'uploads');
-          // Create directory if it doesn't exist
-          if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath, { recursive: true });
-          }
-          cb(null, uploadPath);
-        },
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = path.extname(file.originalname);
-          cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-        },
-      }),
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+      },
     }),
   )
   async createTicket(
     @Body() createTicketDto: any,
     @Req() req,
-    @UploadedFiles() files: MulterFile[] = [],
+    @UploadedFiles() files: Express.Multer.File[] = [],
   ) {
     try {
       if (!req.user) {
         throw new HttpException('User not found', HttpStatus.NOT_FOUND);
       }
 
-      // Generate a ticket number
       const ticketNumber = `TIK-${Date.now().toString().slice(-6)}`;
 
-      // Prepare ticket data
       const ticketData = {
         ...createTicketDto,
         ticketNumber,
@@ -157,20 +124,35 @@ export class TicketsController {
         progress: 0,
       };
 
-      // Create the ticket
       const ticket = await this.ticketsService.create(ticketData);
 
-      // Handle attachments if any
       if (files && files.length > 0) {
-        const attachments = files.map((file) => ({
-          ticketId: ticket.id,
-          userId: req.user.id,
-          fileName: file.originalname,
-          fileSize: file.size,
-          fileType: file.mimetype,
-          filePath: file.path,
-        }));
+        const uploadPromises = files.map(async (file) => {
+          try {
+            const result = await this.cloudinaryService.uploadFile(
+              file,
+              `service-desk/tickets/${ticket.ticketNumber}`,
+            );
 
+            return {
+              ticketId: ticket.id,
+              userId: req.user.id,
+              fileName: file.originalname,
+              fileSize: file.size,
+              fileType: file.mimetype,
+              filePath: result.secure_url,
+              cloudinaryId: result.public_id,
+            };
+          } catch (uploadError) {
+            this.logger.error(`Failed to upload file: ${uploadError.message}`);
+            throw new HttpException(
+              'Failed to upload attachment',
+              HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }
+        });
+
+        const attachments = await Promise.all(uploadPromises);
         await this.ticketsService.addAttachments(attachments);
       }
 
@@ -194,12 +176,10 @@ export class TicketsController {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
 
-      // Check if ticket exists
       if (!ticket) {
         throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
       }
 
-      // Check if user has permission to update this ticket
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
@@ -211,7 +191,6 @@ export class TicketsController {
         );
       }
 
-      // Update the ticket
       return this.ticketsService.update(Number.parseInt(id), updateTicketDto);
     } catch (error) {
       this.logger.error(`Error updating ticket: ${error.message}`);
@@ -228,12 +207,10 @@ export class TicketsController {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
 
-      // Check if ticket exists
       if (!ticket) {
         throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
       }
 
-      // Only admins can delete tickets
       if (req.user.role !== 'admin') {
         throw new HttpException(
           'You do not have permission to delete this ticket',
@@ -241,7 +218,20 @@ export class TicketsController {
         );
       }
 
-      // Delete the ticket
+      // Delete attachments from Cloudinary
+      if (ticket.attachments && ticket.attachments.length > 0) {
+        const deletePromises = ticket.attachments.map(async (attachment) => {
+          if (attachment.cloudinaryId) {
+            try {
+              await this.cloudinaryService.deleteFile(attachment.cloudinaryId);
+            } catch (error) {
+              this.logger.error(`Failed to delete file from Cloudinary: ${error.message}`);
+            }
+          }
+        });
+        await Promise.all(deletePromises);
+      }
+
       return this.ticketsService.remove(Number.parseInt(id));
     } catch (error) {
       this.logger.error(`Error deleting ticket: ${error.message}`);
@@ -258,12 +248,10 @@ export class TicketsController {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
 
-      // Check if ticket exists
       if (!ticket) {
         throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
       }
 
-      // Check if user has access to this ticket
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
@@ -275,7 +263,6 @@ export class TicketsController {
         );
       }
 
-      // Get ticket messages
       return this.ticketsService.getTicketMessages(Number.parseInt(id));
     } catch (error) {
       this.logger.error(`Error getting ticket messages: ${error.message}`);
@@ -290,39 +277,24 @@ export class TicketsController {
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FilesInterceptor('attachments', 5, {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const uploadPath = path.join(process.cwd(), 'uploads');
-          // Create directory if it doesn't exist
-          if (!fs.existsSync(uploadPath)) {
-            fs.mkdirSync(uploadPath, { recursive: true });
-          }
-          cb(null, uploadPath);
-        },
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = path.extname(file.originalname);
-          cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-        },
-      }),
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+      },
     }),
   )
   async addTicketMessage(
     @Param('id') id: string,
     @Body() messageDto: any,
     @Req() req,
-    @UploadedFiles() files: MulterFile[] = [],
+    @UploadedFiles() files: Express.Multer.File[] = [],
   ) {
     try {
       const ticket = await this.ticketsService.findOne(Number.parseInt(id));
 
-      // Check if ticket exists
       if (!ticket) {
         throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
       }
 
-      // Check if user has access to this ticket
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
@@ -334,28 +306,42 @@ export class TicketsController {
         );
       }
 
-      // Add message to ticket
       const message = await this.ticketsService.addMessage({
         ticketId: Number.parseInt(id),
         userId: req.user.id,
         message: messageDto.message,
       });
 
-      // Handle attachments if any
       if (files && files.length > 0) {
-        const attachments = files.map((file) => ({
-          ticketId: Number.parseInt(id),
-          userId: req.user.id,
-          fileName: file.originalname,
-          fileSize: file.size,
-          fileType: file.mimetype,
-          filePath: file.path,
-        }));
+        const uploadPromises = files.map(async (file) => {
+          try {
+            const result = await this.cloudinaryService.uploadFile(
+              file,
+              `service-desk/tickets/${ticket.ticketNumber}/messages`,
+            );
 
+            return {
+              ticketId: Number.parseInt(id),
+              userId: req.user.id,
+              fileName: file.originalname,
+              fileSize: file.size,
+              fileType: file.mimetype,
+              filePath: result.secure_url,
+              cloudinaryId: result.public_id,
+            };
+          } catch (uploadError) {
+            this.logger.error(`Failed to upload file: ${uploadError.message}`);
+            throw new HttpException(
+              'Failed to upload attachment',
+              HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }
+        });
+
+        const attachments = await Promise.all(uploadPromises);
         await this.ticketsService.addAttachments(attachments);
       }
 
-      // Return message with sender info
       return {
         ...message,
         sender: {
@@ -368,6 +354,54 @@ export class TicketsController {
       this.logger.error(`Error adding ticket message: ${error.message}`);
       throw new HttpException(
         error.message || 'Failed to add ticket message',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Delete('attachments/:attachmentId')
+  @UseGuards(JwtAuthGuard)
+  async deleteAttachment(
+    @Param('attachmentId') attachmentId: string,
+    @Req() req,
+  ) {
+    try {
+      const attachment = await this.ticketsService.getAttachment(
+        Number.parseInt(attachmentId),
+      );
+
+      if (!attachment) {
+        throw new HttpException('Attachment not found', HttpStatus.NOT_FOUND);
+      }
+
+      const ticket = await this.ticketsService.findOne(attachment.ticketId);
+
+      if (
+        req.user.role !== 'admin' &&
+        attachment.userId !== req.user.id
+      ) {
+        throw new HttpException(
+          'You do not have permission to delete this attachment',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      // Delete from Cloudinary
+      if (attachment.cloudinaryId) {
+        try {
+          await this.cloudinaryService.deleteFile(attachment.cloudinaryId);
+        } catch (error) {
+          this.logger.error(`Failed to delete from Cloudinary: ${error.message}`);
+        }
+      }
+
+      await this.ticketsService.deleteAttachment(Number.parseInt(attachmentId));
+
+      return { message: 'Attachment deleted successfully' };
+    } catch (error) {
+      this.logger.error(`Error deleting attachment: ${error.message}`);
+      throw new HttpException(
+        error.message || 'Failed to delete attachment',
         error.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

@@ -246,5 +246,64 @@ export class TicketsService {
       this.logger.error(`Error adding attachments: ${error.message}`);
       throw error;
     }
+
+  }
+    async getAttachment(attachmentId: number) {
+    try {
+      const result = await db
+        .select()
+        .from(ticketAttachments)
+        .where(eq(ticketAttachments.id, attachmentId))
+        .limit(1);
+      
+      return result[0] || null;
+    } catch (error) {
+      this.logger.error(`Error getting attachment: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async deleteAttachment(attachmentId: number) {
+    try {
+      const result = await db
+        .delete(ticketAttachments)
+        .where(eq(ticketAttachments.id, attachmentId))
+        .returning();
+      
+      return result[0];
+    } catch (error) {
+      this.logger.error(`Error deleting attachment: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getAttachmentsByTicketId(ticketId: number) {
+    try {
+      const attachments = await db
+        .select()
+        .from(ticketAttachments)
+        .where(eq(ticketAttachments.ticketId, ticketId))
+        .orderBy(desc(ticketAttachments.createdAt));
+      
+      return attachments;
+    } catch (error) {
+      this.logger.error(`Error getting attachments by ticket ID: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async updateAttachment(attachmentId: number, data: any) {
+    try {
+      const result = await db
+        .update(ticketAttachments)
+        .set(data)
+        .where(eq(ticketAttachments.id, attachmentId))
+        .returning();
+      
+      return result[0];
+    } catch (error) {
+      this.logger.error(`Error updating attachment: ${error.message}`);
+      throw error;
+    }
   }
 }

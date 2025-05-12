@@ -5,8 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1746450304231,
-      "tag": "0000_daily_exodus",
+      "when": 1747042750931,
+      "tag": "0000_bent_big_bertha",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1747043020587,
+      "tag": "0001_bored_wolf_cub",
       "breakpoints": true
     }
   ]

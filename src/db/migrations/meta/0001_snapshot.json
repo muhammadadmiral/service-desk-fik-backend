@@ -1,6 +1,6 @@
 {
-  "id": "aa55ed3b-c3f3-41cd-a7f1-229cce9fa7c5",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "4cf7d4a2-db5e-4003-8ae6-c821ef7932ef",
+  "prevId": "aa55ed3b-c3f3-41cd-a7f1-229cce9fa7c5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16,6 +16,12 @@
         },
         "nim": {
           "name": "nim",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nip": {
+          "name": "nip",
           "type": "varchar(20)",
           "primaryKey": false,
           "notNull": false
@@ -75,6 +81,13 @@
           "nullsNotDistinct": false,
           "columns": [
             "nim"
+          ]
+        },
+        "users_nip_unique": {
+          "name": "users_nip_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "nip"
           ]
         },
         "users_email_unique": {

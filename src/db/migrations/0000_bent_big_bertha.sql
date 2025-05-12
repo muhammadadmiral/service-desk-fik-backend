@@ -20,6 +20,7 @@ CREATE TABLE "ticket_attachments" (
 	"file_size" integer NOT NULL,
 	"file_type" varchar(100) NOT NULL,
 	"file_path" varchar(255) NOT NULL,
+	"cloudinary_id" varchar(255),
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
@@ -57,3 +58,5 @@ ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_ticket_id_tickets_
 ALTER TABLE "ticket_messages" ADD CONSTRAINT "ticket_messages_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tickets" ADD CONSTRAINT "tickets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tickets" ADD CONSTRAINT "tickets_assigned_to_users_id_fk" FOREIGN KEY ("assigned_to") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS nip VARCHAR(20) UNIQUE;
