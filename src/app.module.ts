@@ -7,6 +7,8 @@ import { UsersModule } from './modules/users/users.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
+import { NotificationsModule } from './modules/notifications/notification.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
     TicketsModule,
     CloudinaryModule,
     AuthModule,
+    NotificationsModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
