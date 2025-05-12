@@ -16,8 +16,12 @@ import {
   Query,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { TicketsService } from './tickets.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notification.service';
 import { FilesInterceptor } from '@nestjs/platform-express';
 
 @Controller('tickets')
@@ -27,6 +31,8 @@ export class TicketsController {
   constructor(
     private readonly ticketsService: TicketsService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @Get()
@@ -34,7 +40,7 @@ export class TicketsController {
   async getAllTickets(@Req() req, @Query() query: any) {
     try {
       const { status, category } = query;
-      if (req.user?.role === 'admin' || req.user?.role === 'staff') {
+      if (req.user?.role === 'admin' || req.user?.role === 'staff' || req.user?.role === 'executive') {
         return this.ticketsService.findAll(status, category);
       }
       return this.ticketsService.findByUserId(req.user.id, status, category);
@@ -77,6 +83,7 @@ export class TicketsController {
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
+        req.user.role !== 'executive' &&
         ticket.userId !== req.user.id
       ) {
         throw new HttpException(
@@ -183,6 +190,7 @@ export class TicketsController {
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
+        req.user.role !== 'executive' &&
         ticket.userId !== req.user.id
       ) {
         throw new HttpException(
@@ -211,7 +219,7 @@ export class TicketsController {
         throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
       }
 
-      if (req.user.role !== 'admin') {
+      if (req.user.role !== 'admin' && req.user.role !== 'executive') {
         throw new HttpException(
           'You do not have permission to delete this ticket',
           HttpStatus.FORBIDDEN,
@@ -255,6 +263,7 @@ export class TicketsController {
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
+        req.user.role !== 'executive' &&
         ticket.userId !== req.user.id
       ) {
         throw new HttpException(
@@ -298,6 +307,7 @@ export class TicketsController {
       if (
         req.user.role !== 'admin' &&
         req.user.role !== 'staff' &&
+        req.user.role !== 'executive' &&
         ticket.userId !== req.user.id
       ) {
         throw new HttpException(
@@ -403,6 +413,612 @@ export class TicketsController {
       throw new HttpException(
         error.message || 'Failed to delete attachment',
         error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post(':id/disposisi')
+  @UseGuards(JwtAuthGuard)
+  async disposisiTicket(
+    @Param('id') id: string,
+    @Body() body: {
+      toUserId: number;
+      reason?: string;
+      notes?: string;
+      updateProgress?: number;
+    },
+    @Req() req,
+  ) {
+    try {
+      const ticket = await this.ticketsService.findOne(Number.parseInt(id));
+      
+      if (!ticket) {
+        throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+      }
+      
+      // Check permissions - only executives, admins, and current handler can disposisi
+      const canDisposisi = 
+        req.user.role === 'executive' || 
+        req.user.role === 'admin' ||
+        ticket.currentHandler === req.user.id ||
+        ticket.assignedTo === req.user.id;
+        
+      if (!canDisposisi) {
+        throw new HttpException(
+          'You do not have permission to forward this ticket',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      
+      // Get target user
+      const targetUser = await this.usersService.findOne(body.toUserId);
+      if (!targetUser) {
+        throw new HttpException('Target user not found', HttpStatus.NOT_FOUND);
+      }
+      
+      // Create disposisi history record
+      await this.ticketsService.createDisposisiHistory({
+        ticketId: ticket.id,
+        fromUserId: req.user.id,
+        toUserId: body.toUserId,
+        reason: body.reason,
+        notes: body.notes,
+        progressUpdate: body.updateProgress,
+      });
+      
+      // Update disposisi chain
+      const disposisiChain = JSON.parse(ticket.disposisiChain as string) || [];
+      disposisiChain.push({
+        from: req.user.id,
+        to: body.toUserId,
+        timestamp: new Date(),
+        reason: body.reason,
+      });
+      
+      // Update ticket
+      const updateData: any = {
+        currentHandler: body.toUserId,
+        assignedTo: body.toUserId,
+        status: 'disposisi',
+        disposisiChain: JSON.stringify(disposisiChain),
+      };
+      
+      if (body.updateProgress) {
+        updateData.progress = body.updateProgress;
+      }
+      
+      const updatedTicket = await this.ticketsService.update(
+        Number.parseInt(id),
+        updateData
+      );
+      
+      // Add system message
+      await this.ticketsService.addMessage({
+        ticketId: Number.parseInt(id),
+        userId: req.user.id,
+        message: `Tiket di-disposisi ke ${targetUser.name}. ${body.reason ? `Alasan: ${body.reason}` : ''}`,
+      });
+      
+      // Send notifications
+      await this.notificationsService.createNotification({
+        userId: body.toUserId,
+        type: 'ticket_disposisi',
+        title: 'Tiket Disposisi',
+        message: `Tiket #${ticket.ticketNumber} telah di-disposisi kepada Anda`,
+        relatedId: ticket.id,
+        relatedType: 'ticket',
+      });
+      
+      return updatedTicket;
+    } catch (error) {
+      this.logger.error(`Error in disposisi: ${error.message}`);
+      throw new HttpException(
+        error.message || 'Failed to disposisi ticket',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post(':id/quick-resolve')
+  @UseGuards(JwtAuthGuard)
+  async quickResolve(
+    @Param('id') id: string,
+    @Body() body: { solution: string },
+    @Req() req,
+  ) {
+    try {
+      const ticket = await this.ticketsService.findOne(Number.parseInt(id));
+      
+      if (!ticket) {
+        throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+      }
+      
+      // Check if user can resolve
+      const canResolve = 
+        req.user.role === 'executive' || 
+        req.user.role === 'admin' ||
+        ticket.currentHandler === req.user.id ||
+        ticket.assignedTo === req.user.id;
+        
+      if (!canResolve) {
+        throw new HttpException(
+          'You do not have permission to resolve this ticket',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      
+      // Mark as simple ticket
+      await this.ticketsService.update(Number.parseInt(id), {
+        isSimple: true,
+        status: 'completed',
+        progress: 100,
+        completedAt: new Date(),
+      });
+      
+      // Add solution message
+      await this.ticketsService.addMessage({
+        ticketId: Number.parseInt(id),
+        userId: req.user.id,
+        message: `Solusi: ${body.solution}`,
+      });
+      
+      // Notify ticket creator
+      await this.notificationsService.createNotification({
+        userId: ticket.userId,
+        type: 'ticket_resolved',
+        title: 'Tiket Selesai',
+        message: `Tiket #${ticket.ticketNumber} telah diselesaikan`,
+        relatedId: ticket.id,
+        relatedType: 'ticket',
+      });
+      
+      return { message: 'Ticket resolved successfully' };
+    } catch (error) {
+      this.logger.error(`Error in quick resolve: ${error.message}`);
+      throw new HttpException(
+        error.message || 'Failed to resolve ticket',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get(':id/disposisi-history')
+  @UseGuards(JwtAuthGuard)
+  async getDisposisiHistory(@Param('id') id: string, @Req() req) {
+    try {
+      const ticket = await this.ticketsService.findOne(Number.parseInt(id));
+      
+      if (!ticket) {
+        throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+      }
+      
+      // Check permissions
+      const canView =
+        req.user.role === 'executive' || 
+        req.user.role === 'admin' ||
+        ticket.userId === req.user.id ||
+        ticket.currentHandler === req.user.id ||
+        ticket.assignedTo === req.user.id;
+        
+      if (!canView) {
+        throw new HttpException(
+          'You do not have permission to view this history',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      
+      return this.ticketsService.getDisposisiHistory(Number.parseInt(id));
+    } catch (error) {
+      this.logger.error(`Error getting disposisi history: ${error.message}`);
+      throw new HttpException(
+        error.message || 'Failed to get disposisi history',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('list')
+  @UseGuards(JwtAuthGuard)
+  async getTicketList(
+    @Query() query: {
+      status?: string;
+      category?: string;
+      priority?: string;
+      department?: string;
+      assignedTo?: string;
+      search?: string;
+      page?: string;
+      limit?: string;
+    },
+    @Req() req,
+  ) {
+    try {
+      // Executive can see all tickets
+      if (req.user.role === 'executive') {
+        return this.ticketsService.getTicketList(query);
+      }
+      
+      // Others see based on permissions
+      const filters: any = { ...query };
+      
+      if (req.user.role === 'mahasiswa') {
+        filters.userId = req.user.id.toString();
+      } else if (req.user.role === 'dosen') {
+        filters.assignedOrCreated = req.user.id.toString();
+      }
+      
+      return this.ticketsService.getTicketList(filters);
+    } catch (error) {
+      this.logger.error(`Error getting ticket list: ${error.message}`);
+      throw new HttpException(
+        'Failed to get ticket list',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Executive Dashboard - Advanced Analytics
+  @Get('executive/dashboard')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive')
+  async getExecutiveDashboard(
+    @Query() query: {
+      dateFrom?: string;
+      dateTo?: string;
+      department?: string;
+    },
+  ) {
+    try {
+      const filters: any = {};
+      
+      if (query.dateFrom) {
+        filters.dateFrom = new Date(query.dateFrom);
+      }
+      
+      if (query.dateTo) {
+        filters.dateTo = new Date(query.dateTo);
+      }
+      
+      if (query.department) {
+        filters.department = query.department;
+      }
+      
+      return this.ticketsService.getExecutiveDashboard(filters);
+    } catch (error) {
+      this.logger.error(`Error getting executive dashboard: ${error.message}`);
+      throw new HttpException(
+        'Failed to get executive dashboard',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Performance Metrics
+  @Get('metrics/user/:userId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive', 'admin')
+  async getUserPerformanceMetrics(
+    @Param('userId') userId: string,
+    @Query() query: { dateFrom?: string; dateTo?: string },
+  ) {
+    try {
+      const dateRange = query.dateFrom && query.dateTo ? {
+        from: new Date(query.dateFrom),
+        to: new Date(query.dateTo),
+      } : undefined;
+      
+      return this.ticketsService.getUserPerformanceMetrics(
+        parseInt(userId),
+        dateRange
+      );
+    } catch (error) {
+      this.logger.error(`Error getting user metrics: ${error.message}`);
+      throw new HttpException(
+        'Failed to get user performance metrics',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Disposisi Override
+  @Post(':id/override-disposisi')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive')
+  async overrideDisposisi(
+    @Param('id') id: string,
+    @Body() body: {
+      toUserId: number;
+      reason: string;
+      skipLevels?: boolean;
+    },
+    @Req() req,
+  ) {
+    try {
+      const ticket = await this.ticketsService.findOne(parseInt(id));
+      
+      if (!ticket) {
+        throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+      }
+      
+      // Executive can override normal disposisi flow
+      const targetUser = await this.usersService.findOne(body.toUserId);
+      if (!targetUser) {
+        throw new HttpException('Target user not found', HttpStatus.NOT_FOUND);
+      }
+      
+      // Create override disposisi
+      await this.ticketsService.createDisposisiHistory({
+        ticketId: ticket.id,
+        fromUserId: req.user.id,
+        toUserId: body.toUserId,
+        reason: `Executive Override: ${body.reason}`,
+        notes: body.skipLevels ? 'Skipped normal flow levels' : null,
+        actionType: 'override',
+      });
+      
+      // Update ticket
+      const updatedTicket = await this.ticketsService.update(parseInt(id), {
+        currentHandler: body.toUserId,
+        assignedTo: body.toUserId,
+        status: 'disposisi',
+      });
+      
+      // Send notification
+      await this.notificationsService.createNotification({
+        userId: body.toUserId,
+        type: 'executive_override',
+        title: 'Executive Ticket Assignment',
+        message: `Ticket #${ticket.ticketNumber} assigned directly by executive`,
+        relatedId: ticket.id,
+        relatedType: 'ticket',
+      });
+      
+      return updatedTicket;
+    } catch (error) {
+      this.logger.error(`Error in executive override: ${error.message}`);
+      throw new HttpException(
+        error.message || 'Failed to override disposisi',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Bulk Operations
+  @Post('bulk/update')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive', 'admin')
+  async bulkUpdate(
+    @Body() body: {
+      ticketIds: number[];
+      updates: any;
+    },
+    @Req() req,
+  ) {
+    try {
+      return this.ticketsService.bulkUpdate(
+        body.ticketIds,
+        body.updates,
+        req.user.id
+      );
+    } catch (error) {
+      this.logger.error(`Error in bulk update: ${error.message}`);
+      throw new HttpException(
+        'Failed to bulk update tickets',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Export Tickets
+  @Get('export')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive', 'admin')
+  async exportTickets(
+    @Query() query: any,
+    @Query('format') format: 'csv' | 'json' | 'excel' = 'csv',
+  ) {
+    try {
+      return this.ticketsService.exportTickets(query, format);
+    } catch (error) {
+      this.logger.error(`Error exporting tickets: ${error.message}`);
+      throw new HttpException(
+        'Failed to export tickets',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // SLA Management
+  @Get('sla/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive', 'admin')
+  async getSLAStatus() {
+    try {
+      return this.ticketsService.updateSLAStatus();
+    } catch (error) {
+      this.logger.error(`Error getting SLA status: ${error.message}`);
+      throw new HttpException(
+        'Failed to get SLA status',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Workflow Management
+  @Post('workflows')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive', 'admin')
+  async createWorkflow(@Body() workflowData: any, @Req() req) {
+    try {
+      return this.ticketsService.createWorkflow({
+        ...workflowData,
+        createdBy: req.user.id,
+      });
+    } catch (error) {
+      this.logger.error(`Error creating workflow: ${error.message}`);
+      throw new HttpException(
+        'Failed to create workflow',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('workflows')
+  @UseGuards(JwtAuthGuard)
+  async getWorkflows(@Query('category') category?: string) {
+    try {
+      return this.ticketsService.getWorkflows(category);
+    } catch (error) {
+      this.logger.error(`Error getting workflows: ${error.message}`);
+      throw new HttpException(
+        'Failed to get workflows',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // Template Management
+  @Post('templates')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('executive', 'admin')
+  async createTemplate(@Body() templateData: any, @Req() req) {
+    try {
+      return this.ticketsService.createTemplate({
+        ...templateData,
+        createdBy: req.user.id,
+      });
+    } catch (error) {
+      this.logger.error(`Error creating template: ${error.message}`);
+      throw new HttpException(
+        'Failed to create template',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('templates')
+  @UseGuards(JwtAuthGuard)
+  async getTemplates(@Query('category') category?: string) {
+    try {
+      return this.ticketsService.getTemplates(category);
+    } catch (error) {
+      this.logger.error(`Error getting templates: ${error.message}`);
+      throw new HttpException(
+        'Failed to get templates',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Put(':id/reassign')
+  @UseGuards(JwtAuthGuard)
+  async reassignTicket(
+    @Param('id') id: string,
+    @Body() body: { assignedTo: number; reason?: string },
+    @Req() req,
+  ) {
+    try {
+      // Only admin and executive can reassign tickets
+      if (req.user.role !== 'admin' && req.user.role !== 'executive') {
+        throw new HttpException(
+          'Only admins and executives can reassign tickets',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      const ticket = await this.ticketsService.findOne(Number.parseInt(id));
+      if (!ticket) {
+        throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+      }
+
+      const oldAssignee = ticket.assignedTo;
+      
+      // Update ticket assignment
+      const updatedTicket = await this.ticketsService.update(Number.parseInt(id), {
+        assignedTo: body.assignedTo,
+        updatedAt: new Date(),
+      });
+
+      // Create reassignment message
+      await this.ticketsService.addMessage({
+        ticketId: Number.parseInt(id),
+        userId: req.user.id,
+        message: `Ticket reassigned from user #${oldAssignee} to user #${body.assignedTo}. ${body.reason ? `Reason: ${body.reason}` : ''}`,
+      });
+
+      // Send notifications
+      await this.notificationsService.createNotification({
+        userId: body.assignedTo,
+        type: 'ticket_reassigned',
+        title: 'Ticket Reassigned to You',
+        message: `Ticket #${ticket.ticketNumber} has been reassigned to you`,
+        relatedId: ticket.id,
+        relatedType: 'ticket',
+      });
+
+      if (oldAssignee) {
+        await this.notificationsService.createNotification({
+          userId: oldAssignee,
+          type: 'ticket_reassigned',
+          title: 'Ticket Reassigned',
+          message: `Ticket #${ticket.ticketNumber} has been reassigned to another user`,
+          relatedId: ticket.id,
+          relatedType: 'ticket',
+        });
+      }
+
+      await this.notificationsService.createNotification({
+        userId: ticket.userId,
+        type: 'ticket_reassigned',
+        title: 'Your Ticket Was Reassigned',
+        message: `Your ticket #${ticket.ticketNumber} has been reassigned to a different support agent`,
+        relatedId: ticket.id,
+        relatedType: 'ticket',
+      });
+
+      return updatedTicket;
+    } catch (error) {
+      this.logger.error(`Error reassigning ticket: ${error.message}`);
+      throw new HttpException(
+        error.message || 'Failed to reassign ticket',
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('stats')
+  @UseGuards(JwtAuthGuard)
+  async getTicketStats(@Req() req) {
+    try {
+      // Admin and executive get all stats, others get their own
+      const userId = (req.user.role === 'admin' || req.user.role === 'executive') ? null : req.user.id;
+      return this.ticketsService.getTicketStats(userId);
+    } catch (error) {
+      this.logger.error(`Error getting ticket stats: ${error.message}`);
+      throw new HttpException(
+        'Failed to get ticket statistics',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('assigned-to-me')
+  @UseGuards(JwtAuthGuard)
+  async getAssignedTickets(@Req() req) {
+    try {
+      if (req.user.role === 'mahasiswa') {
+        throw new HttpException(
+          'Students cannot be assigned tickets',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      return this.ticketsService.findByAssignee(req.user.id);
+    } catch (error) {
+      this.logger.error(`Error getting assigned tickets: ${error.message}`);
+      throw new HttpException(
+        'Failed to get assigned tickets',
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

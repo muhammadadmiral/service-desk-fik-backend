@@ -6,8 +6,11 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Req,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-users.dto';
@@ -20,14 +23,58 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  findAll() {
-    return this.usersService.findAll();
+  async findAll(
+    @Query('role') role?: string,
+    @Query('department') department?: string,
+    @Query('search') search?: string,
+    @Query('available') available?: string,
+    @Req() req?: any,
+  ) {
+    // Only admin and executive can see all users
+    // Mahasiswa can only see available dosen
+    if (req.user.role === 'mahasiswa') {
+      if (role !== 'dosen') {
+        throw new HttpException(
+          'You can only view available dosen',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      return this.usersService.findAll({
+        role: 'dosen',
+        department,
+        search,
+        available: true,
+      });
+    }
+
+    if (req.user.role !== 'admin' && req.user.role !== 'executive') {
+      throw new HttpException(
+        'Access denied',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    const filters = {
+      role,
+      department,
+      search,
+      available: available === 'true',
+    };
+
+    return this.usersService.findAll(filters);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('dosen/available')
+  async getAvailableDosen(
+    @Query('department') department?: string,
+  ) {
+    return this.usersService.findAvailableDosen(department);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('profile')
   getProfile(@Req() req) {
-    // Dengan JWT, user langsung tersedia di req.user
     return req.user;
   }
 
