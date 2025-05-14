@@ -70,38 +70,6 @@ export class TicketsController {
     }
   }
 
-  @Get(':id')
-  @UseGuards(JwtAuthGuard)
-  async getTicketById(@Param('id') id: string, @Req() req) {
-    try {
-      const ticket = await this.ticketsService.findOne(Number.parseInt(id));
-
-      if (!ticket) {
-        throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
-      }
-
-      if (
-        req.user.role !== 'admin' &&
-        req.user.role !== 'staff' &&
-        req.user.role !== 'executive' &&
-        ticket.userId !== req.user.id
-      ) {
-        throw new HttpException(
-          'You do not have permission to view this ticket',
-          HttpStatus.FORBIDDEN,
-        );
-      }
-
-      return ticket;
-    } catch (error) {
-      this.logger.error(`Error getting ticket by ID: ${error.message}`);
-      throw new HttpException(
-        error.message || 'Failed to get ticket',
-        error.status || HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
   @Post()
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
@@ -1018,6 +986,61 @@ export class TicketsController {
       this.logger.error(`Error getting assigned tickets: ${error.message}`);
       throw new HttpException(
         'Failed to get assigned tickets',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @Get(':id(\\d+)')
+  async getTicketById(@Param('id') id: string, @Req() req) {
+    try {
+      // 1. Validasi dan parse ID
+      const ticketId = Number.parseInt(id, 10);
+      if (Number.isNaN(ticketId)) {
+        throw new HttpException(
+          'Invalid ticket ID format',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 2. Panggil service dengan ticketId yang sudah pasti number
+      const ticket = await this.ticketsService.findOne(ticketId);
+      if (!ticket) {
+        throw new HttpException(
+          'Ticket not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // 3. Cek permission
+      const { role, id: userId } = req.user;
+      const allowedRoles = ['admin', 'staff', 'executive'];
+      if (
+        !allowedRoles.includes(role) &&
+        ticket.userId !== userId
+      ) {
+        throw new HttpException(
+          'You do not have permission to view this ticket',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      return ticket;
+    } catch (error) {
+      // Log full stack buat debugging
+      this.logger.error(
+        `Error getting ticket by ID: ${error.message}`,
+        error.stack,
+      );
+      // Rethrow exception apa adanya kalau itu HttpException,
+      // atau bungkus jadi 500 kalau bukan
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to get ticket',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
