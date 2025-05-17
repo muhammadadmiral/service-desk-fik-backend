@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { NotificationsModule } from './modules/notifications/notification.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { UniversityApiModule } from './modules/university-api/university-api.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     AuthModule,
     NotificationsModule,
     SettingsModule,
+    UniversityApiModule, // New module for university API integration
   ],
   controllers: [AppController],
   providers: [AppService],
