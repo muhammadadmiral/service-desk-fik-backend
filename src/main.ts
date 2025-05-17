@@ -20,7 +20,7 @@ async function bootstrap() {
 
   const port = parseInt(process.env.PORT, 10) || 3001;
   await app.listen(port, '0.0.0.0');
-  console.log(`BACKEND NYA JALAN NIH MEMEK LU NGENTOT`);
+  console.log(`Backend running on PORT 3001`);
 }
 
 bootstrap();
