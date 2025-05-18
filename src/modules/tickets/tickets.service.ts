@@ -412,23 +412,69 @@ export class TicketsService {
     }
   }
 
-  async createDisposisiHistory(data: {
-    ticketId: number;
-    fromUserId: number;
-    toUserId: number;
-    reason?: string;
-    notes?: string;
-    progressUpdate?: number;
-    actionType?: string;
-  }) {
-    try {
-      const result = await db.insert(disposisiHistory).values(data).returning();
-      return result[0];
-    } catch (error) {
-      this.logger.error(`Error creating disposisi history: ${error.message}`);
-      throw error;
+  // Enhanced disposition functionality with SLA tracking
+async createDisposisiHistory(data: {
+  ticketId: number;
+  fromUserId: number;
+  toUserId: number;
+  reason?: string;
+  notes?: string;
+  progressUpdate?: number;
+  actionType?: string;
+}) {
+  try {
+    // Add expected resolution time based on SLA
+    const ticket = await this.findOne(data.ticketId);
+    if (!ticket) {
+      throw new Error('Ticket not found');
     }
+
+    // Calculate expected completion time
+    let expectedCompletionTime = null;
+    if (ticket.slaDeadline) {
+      expectedCompletionTime = ticket.slaDeadline;
+    } else {
+      const slaHours = await this.getSLAHours(ticket.priority, ticket.category);
+      expectedCompletionTime = new Date();
+      expectedCompletionTime.setHours(expectedCompletionTime.getHours() + slaHours);
+    }
+
+    // Determine SLA impact based on disposition type
+    let slaImpact = 'maintained';
+    if (data.actionType === 'escalate') {
+      slaImpact = 'improved'; 
+    } else if (data.actionType === 'forward') {
+      const targetUserWorkload = await this.getUserWorkload(data.toUserId);
+      if (targetUserWorkload.activeTicketCount > 5) {
+        slaImpact = 'extended';
+      }
+    }
+
+    const disposisiData = {
+      ...data,
+      expectedCompletionTime,
+      slaImpact,
+      createdAt: new Date(),
+    };
+
+    const result = await db.insert(disposisiHistory).values(disposisiData).returning();
+    
+    // Send notification to new handler
+    await this.notificationsService.createNotification({
+      userId: data.toUserId,
+      type: 'ticket_disposisi',
+      title: 'Ticket Forwarded to You',
+      message: `Ticket #${ticket.ticketNumber} has been forwarded to you. ${data.reason ? `Reason: ${data.reason}` : ''}`,
+      relatedId: data.ticketId,
+      relatedType: 'ticket',
+    });
+
+    return result[0];
+  } catch (error) {
+    this.logger.error(`Error creating disposisi history: ${error.message}`);
+    throw error;
   }
+}
 
   async getDisposisiHistory(ticketId: number) {
     try {
@@ -774,43 +820,70 @@ export class TicketsService {
     }
   }
 
-  // Check and update SLA status
-  async updateSLAStatus() {
-    try {
-      const now = new Date();
-      
-      // Update at-risk tickets (80% of SLA time passed)
-      await db
-        .update(tickets)
-        .set({ slaStatus: 'at-risk' })
-        .where(
-          and(
-            ne(tickets.status, 'completed'),
-            ne(tickets.status, 'cancelled'),
-            sql`extract(epoch from (${now} - created_at)) > extract(epoch from (sla_deadline - created_at)) * 0.8`,
-            eq(tickets.slaStatus, 'on-time')
-          )
-        );
+// Improved SLA tracking and notification
+async updateSLAStatus() {
+  try {
+    const now = new Date();
+    
+    // Get SLA warning threshold from settings or use default (80%)
+    const slaWarningThreshold = await this.settingsService.getSetting('sla.warning_threshold') || 0.8;
+    
+    // Update at-risk tickets
+    await db
+      .update(tickets)
+      .set({ slaStatus: 'at-risk' })
+      .where(
+        and(
+          ne(tickets.status, 'completed'),
+          ne(tickets.status, 'cancelled'),
+          sql`extract(epoch from (${now} - created_at)) > extract(epoch from (sla_deadline - created_at)) * ${slaWarningThreshold}`,
+          eq(tickets.slaStatus, 'on-time')
+        )
+      );
 
-      // Update breached tickets
+    // Update breached tickets and notify stakeholders
+    const breachedTickets = await db
+      .select()
+      .from(tickets)
+      .where(
+        and(
+          ne(tickets.status, 'completed'),
+          ne(tickets.status, 'cancelled'),
+          lte(tickets.slaDeadline, now),
+          ne(tickets.slaStatus, 'breached')
+        )
+      );
+
+    // Process each breached ticket
+    for (const ticket of breachedTickets) {
+      // Update status
       await db
         .update(tickets)
         .set({ slaStatus: 'breached' })
-        .where(
-          and(
-            ne(tickets.status, 'completed'),
-            ne(tickets.status, 'cancelled'),
-            lte(tickets.slaDeadline, now),
-            ne(tickets.slaStatus, 'breached')
-          )
-        );
+        .where(eq(tickets.id, ticket.id));
 
-      return { success: true };
-    } catch (error) {
-      this.logger.error(`Error updating SLA status: ${error.message}`);
-      throw error;
+      // Send notifications to relevant parties
+      if (ticket.assignedTo) {
+        await this.notificationsService.createNotification({
+          userId: ticket.assignedTo,
+          type: 'sla_breach',
+          title: 'SLA Breach Alert',
+          message: `Ticket #${ticket.ticketNumber} has breached its SLA deadline!`,
+          relatedId: ticket.id,
+          relatedType: 'ticket',
+        });
+      }
     }
+
+    return { 
+      updated: breachedTickets.length,
+      breachedTickets: breachedTickets.map(t => t.ticketNumber)
+    };
+  } catch (error) {
+    this.logger.error(`Error updating SLA status: ${error.message}`);
+    throw error;
   }
+}
 
   // Get next user for round-robin assignment
   private async getNextRoundRobinAssignee(role: string, department: string) {
@@ -942,10 +1015,95 @@ export class TicketsService {
   }
 
   // Get SLA hours based on priority
-  private async getSLAHours(priority: string): Promise<number> {
-    const slaSettings = await this.settingsService.getSetting('sla_hours');
-    return slaSettings?.[priority] || 24; // Default 24 hours
+  private async getSLAHours(priority: string, category?: string): Promise<number> {
+  const slaSettings = await this.settingsService.getSetting('sla_hours');
+  
+  if (category && slaSettings?.[category]?.[priority]) {
+    return slaSettings[category][priority];
   }
+  
+  return slaSettings?.[priority] || 24; // Default 24 hours
+}
+
+// Add getUserWorkload method
+async getUserWorkload(userId: number): Promise<any> {
+  try {
+    const activeTickets = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.assignedTo, userId),
+          ne(tickets.status, 'completed'),
+          ne(tickets.status, 'cancelled')
+        )
+      );
+      
+    const urgentTickets = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.assignedTo, userId),
+          ne(tickets.status, 'completed'),
+          ne(tickets.status, 'cancelled'),
+          eq(tickets.priority, 'urgent')
+        )
+      );
+      
+    return {
+      activeTicketCount: activeTickets[0]?.count || 0,
+      urgentTicketCount: urgentTickets[0]?.count || 0
+    };
+  } catch (error) {
+    this.logger.error(`Error getting user workload: ${error.message}`);
+    return {
+      activeTicketCount: 0,
+      urgentTicketCount: 0
+    };
+  }
+}
+
+// Add getExpertiseScore method
+private async getExpertiseScore(userId: number, category: string): Promise<number> {
+  try {
+    // Get completed tickets by this user in this category
+    const completedInCategory = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.assignedTo, userId),
+          eq(tickets.status, 'completed'),
+          eq(tickets.category, category)
+        )
+      );
+      
+    // Get average satisfaction rating for this user
+    const satisfaction = await db
+      .select({ 
+        avgSatisfaction: sql<number>`avg(customer_satisfaction)::float` 
+      })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.assignedTo, userId),
+          eq(tickets.status, 'completed'),
+          ne(tickets.customerSatisfaction, null)
+        )
+      );
+      
+    // Calculate expertise score based on completed tickets and satisfaction
+    const completedCount = completedInCategory[0]?.count || 0;
+    const satisfactionScore = satisfaction[0]?.avgSatisfaction || 3;
+    
+    // Formula: base score + completed tickets score + satisfaction adjustment
+    return 5 + Math.min(10, completedCount) + (satisfactionScore - 3);
+  } catch (error) {
+    this.logger.error(`Error calculating expertise score: ${error.message}`);
+    return 5; // Default score
+  }
+}
 
   // Bulk operations
   async bulkUpdate(ticketIds: number[], updates: any, userId: number) {
@@ -1092,4 +1250,56 @@ export class TicketsService {
       throw error;
     }
   }
+
+  // Smart ticket assignment based on workload and expertise
+async findBestAssignee(department: string, category: string): Promise<any> {
+  try {
+    // Get staff with relevant expertise
+    const relevantStaff = await this.usersService.findAll({
+      role: 'dosen',
+      department,
+      available: true,
+    });
+
+    if (!relevantStaff || relevantStaff.length === 0) {
+      // Fallback to any admin if no relevant staff found
+      return this.usersService.findAvailableAdmin();
+    }
+
+    // Calculate staff workloads and expertise scores
+    const staffWithWorkloads = await Promise.all(
+      relevantStaff.map(async (staff) => {
+        const activeTickets = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(tickets)
+          .where(
+            and(
+              eq(tickets.assignedTo, staff.id),
+              ne(tickets.status, 'completed'),
+              ne(tickets.status, 'cancelled')
+            )
+          );
+
+        // Calculate expertise score
+        const expertiseScore = await this.getExpertiseScore(staff.id, category);
+
+        return {
+          staff,
+          workload: activeTickets[0]?.count || 0,
+          expertiseScore,
+          assignmentScore: expertiseScore - (activeTickets[0]?.count || 0) * 0.5,
+        };
+      })
+    );
+
+    // Sort by assignment score (higher is better)
+    staffWithWorkloads.sort((a, b) => b.assignmentScore - a.assignmentScore);
+
+    // Return the best candidate
+    return staffWithWorkloads[0]?.staff || null;
+  } catch (error) {
+    this.logger.error(`Error finding best assignee: ${error.message}`);
+    return null;
+  }
+}
 }

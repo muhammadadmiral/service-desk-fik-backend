@@ -1045,4 +1045,69 @@ export class TicketsController {
       );
     }
   }
+
+@Post('auto-assign')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin', 'executive')
+async autoAssignTicket(
+  @Body() body: { ticketId: number; category?: string; department?: string },
+) {
+  try {
+    const ticket = await this.ticketsService.findOne(body.ticketId);
+    
+    if (!ticket) {
+      throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+    }
+
+    const bestAssignee = await this.ticketsService.findBestAssignee(
+      body.department || ticket.department,
+      body.category || ticket.category
+    );
+
+    if (!bestAssignee) {
+      throw new HttpException(
+        'No suitable assignee found',
+        HttpStatus.NOT_FOUND
+      );
+    }
+
+    // Update the ticket with the assigned user
+    const updatedTicket = await this.ticketsService.update(
+      ticket.id,
+      {
+        assignedTo: bestAssignee.id,
+        currentHandler: bestAssignee.id,
+        status: 'disposisi'
+      }
+    );
+
+    // Create disposisi history
+    await this.ticketsService.createDisposisiHistory({
+      ticketId: ticket.id,
+      fromUserId: null, // System assigned
+      toUserId: bestAssignee.id,
+      reason: 'Auto-assigned based on expertise and workload',
+      actionType: 'auto-assign'
+    });
+
+    // Create notification for assignee
+    await this.notificationsService.createNotification({
+      userId: bestAssignee.id,
+      type: 'ticket_assigned',
+      title: 'Ticket Auto-Assigned',
+      message: `Ticket #${ticket.ticketNumber} has been automatically assigned to you`,
+      relatedId: ticket.id,
+      relatedType: 'ticket',
+    });
+
+    return updatedTicket;
+  } catch (error) {
+    this.logger.error(`Error auto-assigning ticket: ${error.message}`);
+    throw new HttpException(
+      error.message || 'Failed to auto-assign ticket',
+      error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+  }
+}
+
 }
