@@ -509,3 +509,74 @@ SELECT upsert_setting('digestFrequency', 'daily', 'string', 'notification', 'Fre
 DROP FUNCTION upsert_setting;
 
 -- Menampilkan semua settings yang berhasil dibuat/diperbarui
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
+CREATE INDEX IF NOT EXISTS idx_settings_category ON settings(category);
+CREATE TABLE IF NOT EXISTS system_logs (
+  id SERIAL PRIMARY KEY,
+  level VARCHAR(20) NOT NULL DEFAULT 'info', -- info | warn | error
+  message TEXT NOT NULL,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS migrations_meta (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  applied_at TIMESTAMP DEFAULT NOW()
+);
+
+SELECT upsert_setting(
+  'ticket.autoCloseAfter',
+  '168',
+  'number',
+  'ticket',
+  'Tutup tiket otomatis setelah jam (default: 168 jam = 7 hari)'
+);
+
+SELECT upsert_setting(
+  'ticket.feedbackOptions',
+  '["Very Satisfied", "Satisfied", "Neutral", "Dissatisfied", "Very Dissatisfied"]',
+  'json',
+  'feedback',
+  'Opsi kepuasan pengguna setelah tiket ditutup'
+);
+
+SELECT upsert_setting(
+  'roles.permissions',
+  '{
+    "mahasiswa": ["create_ticket", "view_own_tickets"],
+    "dosen": ["view_assigned", "respond_ticket"],
+    "admin": ["manage_all"],
+    "executive": ["view_reports"]
+  }',
+  'json',
+  'access',
+  'Daftar role dan izin akses'
+);
+
+SELECT upsert_setting(
+  'email.templates',
+  '{
+    "new_ticket": "Halo {{name}}, tiket {{ticket_number}} telah dibuat.",
+    "ticket_closed": "Tiket {{ticket_number}} telah ditutup. Terima kasih."
+  }',
+  'json',
+  'email',
+  'Template email notifikasi'
+);
+
+SELECT upsert_setting(
+  'site.language',
+  'id',
+  'string',
+  'site',
+  'Bahasa default aplikasi'
+);
+SELECT upsert_setting(
+  'site.timezone',
+  'Asia/Jakarta',
+  'string',
+  'site',
+  'Zona waktu default'
+);

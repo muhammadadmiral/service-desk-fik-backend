@@ -22,7 +22,8 @@
   "db:generate": "drizzle-kit generate",
   "db:migrate": "ts-node src/db/migrate.ts",
   "db:studio": "drizzle-kit studio",
-  "seed": "ts-node src/db/seed.ts"
+  "seed": "ts-node src/db/seed.ts",
+    "db:push": "drizzle-kit push"
  },
  "dependencies": {
   "@nestjs/axios": "^4.0.0",
