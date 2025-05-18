@@ -13,9 +13,9 @@ import {
   ticketAnalytics,
 } from "../../db/schema"
 import { eq, and, desc, asc, or, like, ne, sql, gte, lte } from "drizzle-orm"
-import type { UsersService } from "../users/users.service"
-import type { NotificationsService } from "../notifications/notification.service"
-import type { SettingsService } from "../settings/setting.service"
+import { UsersService } from "../users/users.service"
+import { NotificationsService } from "../notifications/notification.service"
+import { SettingsService } from "../settings/setting.service"
 
 @Injectable()
 export class TicketsService {
@@ -827,7 +827,9 @@ export class TicketsService {
         dates.push(dateString)
 
         // Find matching data or default to 0
-        const newTicketEntry = newTicketsData.find((entry) => entry.date instanceof Date && entry.date.toISOString().split("T")[0] === dateString)
+        const newTicketEntry = newTicketsData.find(
+          (entry) => entry.date instanceof Date && entry.date.toISOString().split("T")[0] === dateString,
+        )
         newTickets.push(newTicketEntry?.count || 0)
 
         const resolvedTicketEntry = resolvedTicketsData.find(

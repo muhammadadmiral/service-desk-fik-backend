@@ -1,5 +1,5 @@
 // src/modules/tickets/tickets.module.ts
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from './tickets.service';
 import { UsersModule } from '../users/users.module';
@@ -9,7 +9,7 @@ import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
-    forwardRef(() => UsersModule),
+    UsersModule,
     CloudinaryModule,
     NotificationsModule,
     SettingsModule,
