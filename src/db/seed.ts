@@ -19,12 +19,12 @@ async function seed() {
   try {
     // ─── 1) Check and Clear Existing Data ─────────────────────────────────────
     console.log('🧹 Clearing existing data...');
-    await db.delete(ticketAttachments);
-    await db.delete(ticketMessages);
-    await db.delete(tickets);
-    await db.delete(users);
-    await db.delete(ticketWorkflows);
-    await db.delete(ticketAnalytics);
+  await db.delete(ticketWorkflows);
+  await db.delete(ticketAnalytics);
+  await db.delete(ticketAttachments);
+  await db.delete(ticketMessages);
+  await db.delete(tickets);
+  await db.delete(users); 
     console.log('✅ Database cleared');
 
     // ─── 2) Seed Users ─────────────────────────────────────────────────────────

@@ -2,7 +2,8 @@
 
 ## Base URL
 ```
-https://service-desk-fik-backend-production.up.railway.app/```
+https://service-desk-fik-backend-production.up.railway.app/
+```
 
 ## Authentication
 All endpoints except login/register require JWT authentication via Bearer token:
@@ -44,7 +45,7 @@ Response:
 }
 ```
 
-### Login with NIM
+### Login with NIM (New & Enhanced)
 ```http
 POST /auth/login/nim
 Content-Type: application/json
@@ -54,7 +55,22 @@ Content-Type: application/json
   "password": "password123"
 }
 
-Response: Same as email login
+Response:
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "user": {
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com",
+    "nim": "21105101001",
+    "role": "mahasiswa",
+    "department": "Informatika",
+    "programStudi": "S1 Informatika", 
+    "fakultas": "Fakultas Ilmu Komputer",
+    "angkatan": "2021",
+    "status": "Aktif"
+  }
+}
 ```
 
 ### Register
@@ -159,6 +175,93 @@ Response:
 }
 ```
 
+### Create User by Admin (New)
+```http
+POST /users/admin/create
+Authorization: Bearer <token>
+Roles: admin, executive
+Content-Type: application/json
+
+{
+  "name": "Dr. Budi Santoso",
+  "email": "budi.santoso@fik.ac.id",
+  "password": "securepassword",
+  "role": "dosen", // mahasiswa, dosen, admin, or executive
+  "department": "Informatika",
+  "position": "Kaprodi", // Optional for dosen and executive
+  "nip": "198701012015011001" // For dosen
+}
+
+Response:
+{
+  "id": 5,
+  "name": "Dr. Budi Santoso",
+  "email": "budi.santoso@fik.ac.id",
+  "role": "dosen",
+  "department": "Informatika",
+  "position": "Kaprodi",
+  "nip": "198701012015011001"
+}
+```
+
+### Update User by Admin (Enhanced)
+```http
+PUT /users/admin/:id
+Authorization: Bearer <token>
+Roles: admin, executive
+Content-Type: application/json
+
+{
+  "name": "Updated Name",
+  "department": "Sistem Informasi",
+  "position": "Wadek 1"
+}
+
+Response:
+{
+  "id": 5,
+  "name": "Updated Name",
+  "email": "budi.santoso@fik.ac.id",
+  "role": "dosen",
+  "department": "Sistem Informasi",
+  "position": "Wadek 1",
+  "nip": "198701012015011001"
+}
+```
+
+### Get Users with Performance (New)
+```http
+GET /users/performance
+Authorization: Bearer <token>
+Roles: admin, executive
+Query Parameters:
+  - role: string (dosen|admin)
+  - department: string
+  - search: string
+  - dateFrom: YYYY-MM-DD
+  - dateTo: YYYY-MM-DD
+
+Response:
+[
+  {
+    "id": 5,
+    "name": "Dr. Budi Santoso",
+    "email": "budi.santoso@fik.ac.id",
+    "role": "dosen",
+    "department": "Informatika",
+    "performance": {
+      "totalTickets": 25,
+      "completedTickets": 20,
+      "avgResolutionTime": 240, // minutes
+      "avgFirstResponseTime": 30, // minutes
+      "slaBreaches": 2,
+      "customerSatisfaction": 4.5,
+      "reopenedTickets": 1
+    }
+  }
+]
+```
+
 ### Create User
 ```http
 POST /users
@@ -247,11 +350,13 @@ Response:
   "attachments": [...],
   "disposisiChain": [...],
   "currentHandler": 5,
-  "assignedTo": 5
+  "assignedTo": 5,
+  "slaStatus": "on-time", // on-time, at-risk, or breached
+  "slaDeadline": "2024-01-16T10:00:00Z"
 }
 ```
 
-### Create Ticket
+### Create Ticket (Enhanced)
 ```http
 POST /tickets
 Authorization: Bearer <token>
@@ -336,7 +441,7 @@ Content-Type: multipart/form-data
 }
 ```
 
-### Disposisi (Forward) Ticket
+### Disposisi (Forward) Ticket (Enhanced)
 ```http
 POST /tickets/:id/disposisi
 Authorization: Bearer <token>
@@ -346,7 +451,23 @@ Content-Type: application/json
   "toUserId": 456,
   "reason": "Memerlukan penanganan teknis",
   "notes": "Sudah dicek, perlu teknisi",
-  "updateProgress": 30
+  "updateProgress": 30,
+  "actionType": "forward" // forward, escalate, return
+}
+
+Response:
+{
+  "id": 1,
+  "ticketId": 1,
+  "fromUserId": 123,
+  "toUserId": 456,
+  "reason": "Memerlukan penanganan teknis",
+  "notes": "Sudah dicek, perlu teknisi",
+  "progressUpdate": 30,
+  "actionType": "forward",
+  "expectedCompletionTime": "2024-01-18T10:00:00Z",
+  "slaImpact": "maintained", // maintained, improved, or extended
+  "createdAt": "2024-01-15T10:30:00Z"
 }
 ```
 
@@ -361,7 +482,7 @@ Content-Type: application/json
 }
 ```
 
-### Get Disposisi History
+### Get Disposisi History (Enhanced)
 ```http
 GET /tickets/:id/disposisi-history
 Authorization: Bearer <token>
@@ -382,6 +503,10 @@ Response:
       "role": "dosen"
     },
     "reason": "Initial review",
+    "notes": "Please check this projector issue",
+    "actionType": "forward",
+    "expectedCompletionTime": "2024-01-18T10:00:00Z",
+    "slaImpact": "maintained",
     "createdAt": "2024-01-15T10:30:00Z"
   }
 ]
@@ -450,11 +575,46 @@ Roles: dosen, admin, executive
 Response: Array of tickets assigned to the authenticated user
 ```
 
+### Update SLA Status (New)
+```http
+GET /tickets/update-sla
+Authorization: Bearer <token>
+Roles: admin, executive
+
+Response:
+{
+  "updated": 3,
+  "breachedTickets": ["TIK-001", "TIK-005", "TIK-008"]
+}
+```
+
+### Get User Workload (New)
+```http
+GET /tickets/workload/:userId
+Authorization: Bearer <token>
+Roles: admin, executive
+
+Response:
+{
+  "activeTicketCount": 5,
+  "urgentTicketCount": 2,
+  "byCategory": [
+    { "category": "Facility", "count": 3 },
+    { "category": "Academic", "count": 2 }
+  ],
+  "byPriority": [
+    { "priority": "high", "count": 2 },
+    { "priority": "urgent", "count": 2 },
+    { "priority": "medium", "count": 1 }
+  ]
+}
+```
+
 ---
 
 ## 4. Executive Endpoints
 
-### Executive Dashboard
+### Executive Dashboard (Enhanced)
 ```http
 GET /tickets/executive/dashboard
 Authorization: Bearer <token>
@@ -473,14 +633,51 @@ Response:
     "slaBreachRate": 5.2,
     "customerSatisfactionAvg": 4.2
   },
-  "departmentPerformance": [...],
-  "categoryBreakdown": [...],
-  "userPerformance": [...],
-  "disposisiFlow": [...]
+  "departmentPerformance": [
+    {
+      "department": "Informatika",
+      "ticketCount": 200,
+      "avgResolutionTime": 220,
+      "slaBreachCount": 12,
+      "satisfaction": 4.3
+    }
+  ],
+  "categoryBreakdown": [
+    {
+      "category": "Facility",
+      "subcategory": "Projector",
+      "count": 45,
+      "avgProgress": 70
+    }
+  ],
+  "userPerformance": [
+    {
+      "userId": 5,
+      "userName": "Dr. Budi",
+      "role": "dosen",
+      "ticketsHandled": 35,
+      "avgResolutionTime": 180,
+      "satisfaction": 4.5
+    }
+  ],
+  "disposisiFlow": [
+    {
+      "fromRole": "mahasiswa",
+      "toRole": "dosen",
+      "fromUserId": 1,
+      "toUserId": 5,
+      "count": 25
+    }
+  ],
+  "trendsOverTime": {
+    "dates": ["2024-01-01", "2024-01-02", "2024-01-03"],
+    "newTickets": [12, 15, 8],
+    "resolvedTickets": [10, 13, 11]
+  }
 }
 ```
 
-### User Performance Metrics
+### User Performance Metrics (Enhanced)
 ```http
 GET /tickets/metrics/user/:userId
 Authorization: Bearer <token>
@@ -497,7 +694,20 @@ Response:
   "avgFirstResponseTime": 30,
   "slaBreaches": 2,
   "customerSatisfaction": 4.5,
-  "reopenedTickets": 1
+  "reopenedTickets": 1,
+  "byCategory": [
+    {
+      "category": "Facility",
+      "count": 20,
+      "avgResolutionTime": 160,
+      "satisfaction": 4.6
+    }
+  ],
+  "trendsOverTime": {
+    "weeks": ["Week 1", "Week 2", "Week 3", "Week 4"],
+    "ticketsHandled": [10, 15, 12, 13],
+    "avgResolutionTime": [190, 170, 175, 180]
+  }
 }
 ```
 
