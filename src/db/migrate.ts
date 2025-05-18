@@ -1,185 +1,227 @@
 import { db } from './index';
-import * as dotenv from 'dotenv';
 import { sql } from 'drizzle-orm';
+import * as schema from './schema';
+import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-async function checkTableExists(tableName: string): Promise<boolean> {
+async function migrate() {
+  console.log('🔄 Starting database migration...');
+
   try {
-    const result = await db.execute(sql`
+    // Create indexes on existing tables
+    console.log('📊 Creating optimized indexes...');
+    
+    // Users table indexes
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS user_role_idx ON users (role)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS user_department_idx ON users (department)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS user_program_studi_idx ON users (program_studi)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS user_status_idx ON users (status)`);
+    
+    // Tickets table indexes
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_status_idx ON tickets (status)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_priority_idx ON tickets (priority)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_category_idx ON tickets (category)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_department_idx ON tickets (department)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_user_id_idx ON tickets (user_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_assigned_to_idx ON tickets (assigned_to)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_created_at_idx ON tickets (created_at)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_sla_status_idx ON tickets (sla_status)`);
+    
+    // Ticket messages indexes
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS message_ticket_id_idx ON ticket_messages (ticket_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS message_user_id_idx ON ticket_messages (user_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS message_type_idx ON ticket_messages (message_type)`);
+    
+    // Notifications indexes
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS notification_user_id_idx ON notifications (user_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS notification_is_read_idx ON notifications (is_read)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS notification_type_idx ON notifications (type)`);
+    
+    // Settings indexes
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS settings_category_idx ON settings (category)`);
+    
+    console.log('✅ Indexes created successfully');
+
+    // Check and add missing columns
+    console.log('🔍 Checking for missing columns...');
+    
+    // Check if disposisi_chain column exists in tickets table
+    const disposisiChainExists = await db.execute(sql`
       SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-        AND table_name = ${tableName}
-      ) as table_exists
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'tickets' AND column_name = 'disposisi_chain'
+      ) as exists
     `);
-    console.log(`Checking table ${tableName}:`, result);
-    if (Array.isArray(result)) {
-      return result[0]?.table_exists || false;
-    } else if ((result as any).rows) {
-      return (result as any).rows[0]?.table_exists || false;
+    
+    if (!disposisiChainExists.rows[0].exists) {
+      console.log('Adding disposisi_chain column to tickets table...');
+      await db.execute(sql`ALTER TABLE tickets ADD COLUMN disposisi_chain JSONB DEFAULT '[]'`);
     }
-    return false;
-  } catch (error) {
-    console.error(`Error checking table ${tableName}:`, error);
-    return false;
-  }
-}
-
-async function checkColumnExists(
-  tableName: string,
-  columnName: string,
-): Promise<boolean> {
-  try {
-    const result = await db.execute(sql`
+    
+    // Check if metadata column exists in tickets table
+    const metadataExists = await db.execute(sql`
       SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-        AND table_name = ${tableName}
-        AND column_name = ${columnName}
-      ) as column_exists
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'tickets' AND column_name = 'metadata'
+      ) as exists
     `);
-    console.log(`Checking column ${columnName} in ${tableName}:`, result);
-    if (Array.isArray(result)) {
-      return result[0]?.column_exists || false;
-    } else if ((result as any).rows) {
-      return (result as any).rows[0]?.column_exists || false;
+    
+    if (!metadataExists.rows[0].exists) {
+      console.log('Adding metadata column to tickets table...');
+      await db.execute(sql`ALTER TABLE tickets ADD COLUMN metadata JSONB DEFAULT '{}'`);
     }
-    return false;
-  } catch (error) {
-    console.error(`Error checking column ${columnName} in ${tableName}:`, error);
-    return false;
-  }
-}
-
-async function runMigrations() {
-  console.log('Running migrations...');
-
-  // Core tables
-  const usersExists = await checkTableExists('users');
-  const ticketsExists = await checkTableExists('tickets');
-  const ticketMessagesExists = await checkTableExists('ticket_messages');
-  const ticketAttachmentsExists = await checkTableExists('ticket_attachments');
-
-  console.log('\nTable status:');
-  console.log('- users:', usersExists ? 'exists' : 'not found');
-  console.log('- tickets:', ticketsExists ? 'exists' : 'not found');
-  console.log('- ticket_messages:', ticketMessagesExists ? 'exists' : 'not found');
-  console.log('- ticket_attachments:', ticketAttachmentsExists ? 'exists' : 'not found');
-
-  if (usersExists && ticketsExists && ticketMessagesExists && ticketAttachmentsExists) {
-    console.log('\nAll core tables exist. Running incremental migrations...');
-
-    // Users table columns
-    const userColumns = [
-      { name: 'nip', definition: 'VARCHAR(20) UNIQUE' },
-      { name: 'program_studi', definition: 'VARCHAR(100)' },
-      { name: 'fakultas', definition: 'VARCHAR(100)' },
-      { name: 'angkatan', definition: 'VARCHAR(10)' },
-      { name: 'status', definition: 'VARCHAR(20)' },
-      { name: 'last_login', definition: 'TIMESTAMP' },
-    ];
-
-    for (const col of userColumns) {
-      if (!(await checkColumnExists('users', col.name))) {
-        console.log(`Adding ${col.name} column to users table...`);
-        await db.execute(sql`
-          ALTER TABLE users ADD COLUMN ${sql.identifier(col.name)} ${sql.raw(col.definition)}
-        `);
-        console.log(`✓ Added ${col.name} column successfully`);
-      }
+    
+    // Check if tags column exists in tickets table
+    const tagsExists = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'tickets' AND column_name = 'tags'
+      ) as exists
+    `);
+    
+    if (!tagsExists.rows[0].exists) {
+      console.log('Adding tags column to tickets table...');
+      await db.execute(sql`ALTER TABLE tickets ADD COLUMN tags JSONB DEFAULT '[]'`);
     }
+    
+    console.log('✅ Column checks completed');
 
-    // Tickets table columns
-    const ticketColumns = [
-      { name: 'subcategory', definition: 'VARCHAR(100)' },
-      { name: 'is_simple', definition: 'BOOLEAN DEFAULT false' },
-      { name: 'disposisi_chain', definition: "JSONB DEFAULT '[]'" },
-      { name: 'current_handler', definition: 'INTEGER' },
-      { name: 'sla_deadline', definition: 'TIMESTAMP' },
-      { name: 'sla_status', definition: 'VARCHAR(50)' },
-      { name: 'escalation_level', definition: 'INTEGER DEFAULT 0' },
-      { name: 'reopen_count', definition: 'INTEGER DEFAULT 0' },
-      { name: 'customer_satisfaction', definition: 'INTEGER' },
-      { name: 'resolution_time', definition: 'INTEGER' },
-      { name: 'first_response_time', definition: 'INTEGER' },
-      { name: 'tags', definition: "JSONB DEFAULT '[]'" },
-      { name: 'metadata', definition: "JSONB DEFAULT '{}'" },
-    ];
-
-    for (const col of ticketColumns) {
-      if (!(await checkColumnExists('tickets', col.name))) {
-        console.log(`Adding ${col.name} column to tickets table...`);
-        await db.execute(sql`
-          ALTER TABLE tickets ADD COLUMN ${sql.identifier(col.name)} ${sql.raw(col.definition)}
-        `);
-        console.log(`✓ Added ${col.name} column successfully`);
-      }
-    }
-
-    // Ticket messages table columns
-    const messageColumns = [
-      { name: 'message_type', definition: "VARCHAR(50) DEFAULT 'comment'" },
-      { name: 'is_internal', definition: 'BOOLEAN DEFAULT false' },
-    ];
-
-    for (const col of messageColumns) {
-      if (!(await checkColumnExists('ticket_messages', col.name))) {
-        console.log(`Adding ${col.name} column to ticket_messages table...`);
-        await db.execute(sql`
-          ALTER TABLE ticket_messages ADD COLUMN ${sql.identifier(col.name)} ${sql.raw(col.definition)}
-        `);
-        console.log(`✓ Added ${col.name} column successfully`);
-      }
-    }
-
-    // Ticket attachments table
-    if (!(await checkColumnExists('ticket_attachments', 'cloudinary_id'))) {
-      console.log('Adding cloudinary_id column to ticket_attachments table...');
+    // Create missing tables if they don't exist
+    console.log('🏗️ Creating missing tables...');
+    
+    // Check if disposisi_history table exists
+    const disposisiHistoryExists = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'disposisi_history'
+      ) as exists
+    `);
+    
+    if (!disposisiHistoryExists.rows[0].exists) {
+      console.log('Creating disposisi_history table...');
       await db.execute(sql`
-        ALTER TABLE ticket_attachments ADD COLUMN cloudinary_id VARCHAR(255)
-      `);
-      console.log('✓ Added cloudinary_id column successfully');
-    }
-
-    // Notifications table
-    if (!(await checkTableExists('notifications'))) {
-      console.log('Creating notifications table...');
-      await db.execute(sql`
-        CREATE TABLE notifications (
+        CREATE TABLE disposisi_history (
           id SERIAL PRIMARY KEY,
-          user_id INTEGER NOT NULL,
-          type VARCHAR(50) NOT NULL,
-          title VARCHAR(255) NOT NULL,
-          message TEXT NOT NULL,
-          is_read BOOLEAN DEFAULT false,
-          read_at TIMESTAMP,
-          related_id INTEGER,
-          related_type VARCHAR(50),
-          created_at TIMESTAMP DEFAULT now()
+          ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+          from_user_id INTEGER REFERENCES users(id),
+          to_user_id INTEGER NOT NULL REFERENCES users(id),
+          reason TEXT,
+          notes TEXT,
+          progress_update INTEGER,
+          action_type VARCHAR(50),
+          expected_completion_time TIMESTAMP,
+          sla_impact VARCHAR(50),
+          created_at TIMESTAMP DEFAULT NOW()
         )
       `);
-      console.log('✓ notifications table created successfully');
+      await db.execute(sql`CREATE INDEX disposisi_ticket_id_idx ON disposisi_history (ticket_id)`);
+      await db.execute(sql`CREATE INDEX disposisi_to_user_id_idx ON disposisi_history (to_user_id)`);
     }
-
-    console.log('\nIncremental migrations completed successfully');
-  } else {
-    console.log('\nSome tables are missing. Database needs to be initialized first.');
-  }
-}
-
-async function main() {
-  try {
-    await runMigrations();
-    console.log('\nAll migrations completed successfully');
+    
+    // Check if ticket_templates table exists
+    const ticketTemplatesExists = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'ticket_templates'
+      ) as exists
+    `);
+    
+    if (!ticketTemplatesExists.rows[0].exists) {
+      console.log('Creating ticket_templates table...');
+      await db.execute(sql`
+        CREATE TABLE ticket_templates (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          category VARCHAR(100) NOT NULL,
+          subcategory VARCHAR(100),
+          department VARCHAR(100) NOT NULL,
+          priority VARCHAR(50) NOT NULL,
+          template_content JSONB NOT NULL,
+          auto_assignment_rules JSONB,
+          sla_hours INTEGER DEFAULT 24,
+          is_active BOOLEAN DEFAULT TRUE,
+          created_by INTEGER REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX template_category_idx ON ticket_templates (category)`);
+      await db.execute(sql`CREATE INDEX template_is_active_idx ON ticket_templates (is_active)`);
+    }
+    
+    // Check if ticket_workflows table exists
+    const ticketWorkflowsExists = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'ticket_workflows'
+      ) as exists
+    `);
+    
+    if (!ticketWorkflowsExists.rows[0].exists) {
+      console.log('Creating ticket_workflows table...');
+      await db.execute(sql`
+        CREATE TABLE ticket_workflows (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          category VARCHAR(100) NOT NULL,
+          steps JSONB NOT NULL,
+          conditions JSONB,
+          is_default BOOLEAN DEFAULT FALSE,
+          is_active BOOLEAN DEFAULT TRUE,
+          created_by INTEGER REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX workflow_category_idx ON ticket_workflows (category)`);
+      await db.execute(sql`CREATE INDEX workflow_is_default_idx ON ticket_workflows (is_default)`);
+      await db.execute(sql`CREATE INDEX workflow_is_active_idx ON ticket_workflows (is_active)`);
+    }
+    
+    // Check if ticket_analytics table exists
+    const ticketAnalyticsExists = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = 'ticket_analytics'
+      ) as exists
+    `);
+    
+    if (!ticketAnalyticsExists.rows[0].exists) {
+      console.log('Creating ticket_analytics table...');
+      await db.execute(sql`
+        CREATE TABLE ticket_analytics (
+          id SERIAL PRIMARY KEY,
+          date TIMESTAMP NOT NULL,
+          hour INTEGER,
+          department VARCHAR(100),
+          category VARCHAR(100),
+          total_tickets INTEGER DEFAULT 0,
+          open_tickets INTEGER DEFAULT 0,
+          closed_tickets INTEGER DEFAULT 0,
+          average_resolution_time INTEGER,
+          average_response_time INTEGER,
+          sla_breaches INTEGER DEFAULT 0,
+          customer_satisfaction_average INTEGER,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await db.execute(sql`CREATE INDEX analytics_date_idx ON ticket_analytics (date)`);
+      await db.execute(sql`CREATE INDEX analytics_department_idx ON ticket_analytics (department)`);
+      await db.execute(sql`CREATE INDEX analytics_category_idx ON ticket_analytics (category)`);
+    }
+    
+    console.log('✅ Table creation completed');
+    
+    console.log('🎉 Database migration completed successfully!');
   } catch (error) {
-    console.error('Migration script failed:', error);
-    process.exit(1);
+    console.error('❌ Error during migration:', error);
+    throw error;
   }
-
-  process.exit(0);
 }
 
-main();
+// Run migration
+migrate().catch((err) => {
+  console.error('❌ Migration failed:', err);
+  process.exit(1);
+});

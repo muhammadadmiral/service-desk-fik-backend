@@ -725,100 +725,193 @@ async createDisposisiHistory(data: {
         conditions.push(eq(tickets.department, filters.department));
       }
 
-      // Overall metrics
-      const overallMetrics = await db
-        .select({
-          totalTickets: sql<number>`count(*)::int`,
-          openTickets: sql<number>`count(*) filter (where status not in ('completed', 'cancelled'))::int`,
-          averageResolutionTime: sql<number>`avg(resolution_time)::int`,
-          slaBreachRate: sql<number>`(count(*) filter (where sla_status = 'breached') * 100.0 / count(*))::float`,
-          customerSatisfactionAvg: sql<number>`avg(customer_satisfaction)::float`,
-        })
-        .from(tickets)
-        .where(conditions.length > 0 ? and(...conditions) : undefined);
+    // Overall metrics - Fixed division by zero error
+    const overallMetrics = await db
+      .select({
+        totalTickets: sql<number>`count(*)::int`,
+        openTickets: sql<number>`count(*) filter (where status not in ('completed', 'cancelled'))::int`,
+        averageResolutionTime: sql<number>`coalesce(avg(resolution_time), 0)::int`,
+        // Fix: Use NULLIF to prevent division by zero
+        slaBreachRate: sql<number>`coalesce((count(*) filter (where sla_status = 'breached') * 100.0 / NULLIF(count(*), 0)), 0)::float`,
+        customerSatisfactionAvg: sql<number>`coalesce(avg(customer_satisfaction), 0)::float`,
+      })
+      .from(tickets)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
 
-      // Department performance
-      const departmentPerformance = await db
-        .select({
-          department: tickets.department,
-          ticketCount: sql<number>`count(*)::int`,
-          avgResolutionTime: sql<number>`avg(resolution_time)::int`,
-          slaBreachCount: sql<number>`count(*) filter (where sla_status = 'breached')::int`,
-          satisfaction: sql<number>`avg(customer_satisfaction)::float`,
-        })
-        .from(tickets)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .groupBy(tickets.department);
+    // Department performance
+    const departmentPerformance = await db
+      .select({
+        department: tickets.department,
+        ticketCount: sql<number>`count(*)::int`,
+        avgResolutionTime: sql<number>`coalesce(avg(resolution_time), 0)::int`,
+        slaBreachCount: sql<number>`count(*) filter (where sla_status = 'breached')::int`,
+        satisfaction: sql<number>`coalesce(avg(customer_satisfaction), 0)::float`,
+      })
+      .from(tickets)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(tickets.department);
 
-      // Category breakdown
-      const categoryBreakdown = await db
-        .select({
-          category: tickets.category,
-          subcategory: tickets.subcategory,
-          count: sql<number>`count(*)::int`,
-          avgProgress: sql<number>`avg(progress)::int`,
-        })
-        .from(tickets)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .groupBy(tickets.category, tickets.subcategory);
+    // Category breakdown
+    const categoryBreakdown = await db
+      .select({
+        category: tickets.category,
+        subcategory: tickets.subcategory,
+        count: sql<number>`count(*)::int`,
+        avgProgress: sql<number>`coalesce(avg(progress), 0)::int`,
+      })
+      .from(tickets)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(tickets.category, tickets.subcategory);
 
-      // User performance (for executives to evaluate staff)
-      const userPerformance = await db
-        .select({
-          userId: tickets.assignedTo,
-          userName: users.name,
-          role: users.role,
-          ticketsHandled: sql<number>`count(*)::int`,
-          avgResolutionTime: sql<number>`avg(resolution_time)::int`,
-          satisfaction: sql<number>`avg(customer_satisfaction)::float`,
-        })
-        .from(tickets)
-        .leftJoin(users, eq(users.id, tickets.assignedTo))
-        .where(
-          and(
-            ne(tickets.assignedTo, null),
-            ...(conditions.length > 0 ? conditions : [])
-          )
+    // User performance (for executives to evaluate staff)
+    const userPerformance = await db
+      .select({
+        userId: tickets.assignedTo,
+        userName: users.name,
+        role: users.role,
+        ticketsHandled: sql<number>`count(*)::int`,
+        avgResolutionTime: sql<number>`coalesce(avg(resolution_time), 0)::int`,
+        satisfaction: sql<number>`coalesce(avg(customer_satisfaction), 0)::float`,
+      })
+      .from(tickets)
+      .leftJoin(users, eq(users.id, tickets.assignedTo))
+      .where(
+        and(
+          ne(tickets.assignedTo, null),
+          ...(conditions.length > 0 ? conditions : [])
         )
-        .groupBy(tickets.assignedTo, users.name, users.role);
+      )
+      .groupBy(tickets.assignedTo, users.name, users.role);
 
-          const disposisiFlowData = await db
-        .select({
-          fromUserId: disposisiHistory.fromUserId,
-          toUserId: disposisiHistory.toUserId,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(disposisiHistory)
-        .groupBy(disposisiHistory.fromUserId, disposisiHistory.toUserId);
+    // Get trends over time
+    const trendsOverTime = await this.getTicketTrendsOverTime(filters);
+
+    const disposisiFlowData = await db
+      .select({
+        fromUserId: disposisiHistory.fromUserId,
+        toUserId: disposisiHistory.toUserId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(disposisiHistory)
+      .groupBy(disposisiHistory.fromUserId, disposisiHistory.toUserId);
+      
+    // Get user roles and calculate metrics
+    const disposisiFlow = await Promise.all(
+      disposisiFlowData.map(async (flow) => {
+        const fromUser = flow.fromUserId ? await this.usersService.findOne(flow.fromUserId) : null;
+        const toUser = await this.usersService.findOne(flow.toUserId);
         
-      // Get user roles and calculate metrics
-      const disposisiFlow = await Promise.all(
-        disposisiFlowData.map(async (flow) => {
-          const fromUser = flow.fromUserId ? await this.usersService.findOne(flow.fromUserId) : null;
-          const toUser = await this.usersService.findOne(flow.toUserId);
-          
-          return {
-            fromRole: fromUser?.role || 'system',
-            toRole: toUser?.role || 'unknown',
-            fromUserId: flow.fromUserId,
-            toUserId: flow.toUserId,
-            count: flow.count,
-          };
-        })
-      );
+        return {
+          fromRole: fromUser?.role || 'system',
+          toRole: toUser?.role || 'unknown',
+          fromUserId: flow.fromUserId,
+          toUserId: flow.toUserId,
+          count: flow.count,
+        };
+      })
+    );
 
-      return {
-        overallMetrics: overallMetrics[0],
-        departmentPerformance,
-        categoryBreakdown,
-        userPerformance,
-        disposisiFlow,
-      };
-    } catch (error) {
-      this.logger.error(`Error getting executive dashboard: ${error.message}`);
-      throw error;
-    }
+    return {
+      overallMetrics: overallMetrics[0],
+      departmentPerformance,
+      categoryBreakdown,
+      userPerformance,
+      disposisiFlow,
+      trendsOverTime,
+    };
+  } catch (error) {
+    this.logger.error(`Error getting executive dashboard: ${error.message}`);
+    throw error;
   }
+}
+
+// Helper method to get ticket trends over time
+private async getTicketTrendsOverTime(filters?: {
+  dateFrom?: Date;
+  dateTo?: Date;
+  department?: string;
+}) {
+  try {
+    // Default to last 30 days if no date range provided
+    const endDate = filters?.dateTo || new Date();
+    const startDate = filters?.dateFrom || new Date(endDate);
+    startDate.setDate(startDate.getDate() - 30);
+    
+    const conditions = [
+      gte(tickets.createdAt, startDate),
+      lte(tickets.createdAt, endDate)
+    ];
+    
+    if (filters?.department) {
+      conditions.push(eq(tickets.department, filters.department));
+    }
+    
+    // Get daily counts of new tickets
+    const newTicketsData = await db
+      .select({
+        date: sql`date_trunc('day', created_at)::date`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(tickets)
+      .where(and(...conditions))
+      .groupBy(sql`date_trunc('day', created_at)::date`)
+      .orderBy(sql`date_trunc('day', created_at)::date`);
+    
+    // Get daily counts of resolved tickets
+    const resolvedTicketsData = await db
+      .select({
+        date: sql`date_trunc('day', completed_at)::date`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(tickets)
+      .where(and(
+        ne(tickets.completedAt, null),
+        gte(tickets.completedAt, startDate),
+        lte(tickets.completedAt, endDate),
+        ...(filters?.department ? [eq(tickets.department, filters.department)] : [])
+      ))
+      .groupBy(sql`date_trunc('day', completed_at)::date`)
+      .orderBy(sql`date_trunc('day', completed_at)::date`);
+    
+    // Generate date range
+    const dates = [];
+    const newTickets = [];
+    const resolvedTickets = [];
+    
+    const currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dateString = currentDate.toISOString().split('T')[0];
+      dates.push(dateString);
+      
+      // Find matching data or default to 0
+      const newTicketEntry = newTicketsData.find(
+        entry => entry.date.toISOString().split('T')[0] === dateString
+      );
+      newTickets.push(newTicketEntry?.count || 0);
+      
+      const resolvedTicketEntry = resolvedTicketsData.find(
+        entry => entry.date?.toISOString().split('T')[0] === dateString
+      );
+      resolvedTickets.push(resolvedTicketEntry?.count || 0);
+      
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return {
+      dates,
+      newTickets,
+      resolvedTickets,
+    };
+  } catch (error) {
+    this.logger.error(`Error getting ticket trends: ${error.message}`);
+    return {
+      dates: [],
+      newTickets: [],
+      resolvedTickets: [],
+    };
+  }
+}
 
 // Improved SLA tracking and notification
 async updateSLAStatus() {
