@@ -16,6 +16,8 @@ import { eq, and, desc, asc, or, like, ne, sql, gte, lte } from "drizzle-orm"
 import { UsersService } from "../users/users.service"
 import { NotificationsService } from "../notifications/notification.service"
 import { SettingsService } from "../settings/setting.service"
+import * as Excel from 'exceljs';
+
 
 @Injectable()
 export class TicketsService {
@@ -1143,31 +1145,57 @@ export class TicketsService {
   }
 
   // Export tickets
-  async exportTickets(filters: any, format: "csv" | "json" | "excel") {
-    try {
-      const tickets = await this.getTicketList(filters)
+ async exportTickets(filters: any, format: "csv" | "json" | "excel") {
+  try {
+    const tickets = await this.getTicketList(filters);
 
-      // Transform data based on format
-      if (format === "csv") {
-        // Convert to CSV
-        const headers = Object.keys(tickets.data[0]).join(",")
-        const rows = tickets.data.map((ticket) =>
-          Object.values(ticket)
-            .map((val) => (typeof val === "string" ? `"${val}"` : val))
-            .join(","),
-        )
-        return [headers, ...rows].join("\n")
-      } else if (format === "json") {
-        return JSON.stringify(tickets.data, null, 2)
-      } else if (format === "excel") {
-        // Would need a library like xlsx for Excel export
-        throw new Error("Excel export not implemented")
-      }
-    } catch (error) {
-      this.logger.error(`Error exporting tickets: ${error.message}`)
-      throw error
+    // Transform data based on format
+    if (format === "csv") {
+      // Convert to CSV
+      const headers = Object.keys(tickets.data[0]).join(",");
+      const rows = tickets.data.map((ticket) =>
+        Object.values(ticket)
+          .map((val) => (typeof val === "string" ? `"${val}"` : val))
+          .join(","),
+      );
+      return [headers, ...rows].join("\n");
+    } else if (format === "json") {
+      return JSON.stringify(tickets.data, null, 2);
+    } else if (format === "excel") {
+      // Implementasi Excel export menggunakan ExcelJS
+      const workbook = new Excel.Workbook();
+      const worksheet = workbook.addWorksheet('Tickets');
+      
+      // Definisikan kolom-kolom yang dibutuhkan
+      const columns = Object.keys(tickets.data[0]).map(key => ({
+        header: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
+        key: key,
+        width: 15
+      }));
+      
+      worksheet.columns = columns;
+      
+      // Tambahkan data
+      worksheet.addRows(tickets.data);
+      
+      // Styling header
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' }
+      };
+      
+      // Membuat buffer
+      const buffer = await workbook.xlsx.writeBuffer();
+      
+      return buffer;
     }
+  } catch (error) {
+    this.logger.error(`Error exporting tickets: ${error.message}`);
+    throw error;
   }
+}
 
   // Enhanced workflow management
   async createWorkflow(workflowData: any) {
